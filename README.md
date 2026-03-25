@@ -39,14 +39,13 @@ This table lists photometric interpretations and sample formats which are suppor
 | Fax4     | ✓        | not yet  |
 | JPEG     | ✓        | not yet  |
 | ZSTD     | ✓        | not yet  |
+| WebP     | ✓        | not yet  |
 
 
 ## Not yet supported
 
 Formats and interpretations not listed above or with empty entries are unsupported.
 
-- Baseline tags
-  - `ExtraSamples`
 - Extension tags
 
 ## Fuzzing
