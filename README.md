@@ -53,5 +53,18 @@ Formats and interpretations not listed above or with empty entries are unsupport
 This crate uses [cargo-fuzz](https://github.com/rust-fuzz/cargo-fuzz) in order to test the image parser.
 
 After installing it with `cargo install cargo-fuzz` on a nightly rustc, the
-fuzzing harness can be run with recommended settings using 
+fuzzing harness can be run with recommended settings using
 `cargo fuzz run decode_image -snone -- -timeout=5`.
+
+## License
+
+MIT
+
+
+
+### Upstream Contribution
+
+This is a fork of [image-rs/image-tiff](https://github.com/image-rs/image-tiff) (MIT).
+We are willing to release our improvements under the original MIT
+license if upstream takes over maintenance of those improvements. We'd rather
+contribute back than maintain a parallel codebase. Open an issue or reach out.
