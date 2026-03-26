@@ -38,6 +38,8 @@ use self::writer::*;
 /// [Predictor::Horizontal] is for integer sample types.
 /// [Predictor::FloatingPoint] is for floating-point sample types (f32, f64).
 pub type Predictor = crate::tags::Predictor;
+#[cfg(feature = "deflate")]
+pub type DeflateLevel = compression::DeflateLevel;
 
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
@@ -49,14 +51,8 @@ pub enum Compression {
     #[cfg(feature = "lzw")]
     Lzw,
     /// [DEFLATE](https://en.wikipedia.org/wiki/DEFLATE) algorithm with the specified compression level.
-    ///
-    /// The valid levels are 1 through 9 inclusive. The default level is 6.
-    ///
-    /// - `1` stands for light but fast compression
-    /// - `6` is the recommended balanced default
-    /// - `9` is maximum compression ratio at the cost of slow encoding
     #[cfg(feature = "deflate")]
-    Deflate(u8),
+    Deflate(DeflateLevel),
     /// [PackBits](https://en.wikipedia.org/wiki/PackBits) compression, a variant of RLE compression scheme. Fast, primitive compression with a poor compression ratio.
     Packbits,
 }
@@ -79,7 +75,7 @@ impl Compression {
             #[cfg(feature = "lzw")]
             Compression::Lzw => compression::Lzw {}.get_algorithm(),
             #[cfg(feature = "deflate")]
-            Compression::Deflate(level) => compression::Deflate::with_level(*level).get_algorithm(),
+            Compression::Deflate(ref level) => compression::Deflate::with_level(*level).get_algorithm(),
             Compression::Packbits => compression::Packbits {}.get_algorithm(),
         }
     }

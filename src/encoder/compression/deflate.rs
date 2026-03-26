@@ -1,6 +1,21 @@
 use crate::encoder::compression::*;
 use flate2::{write::ZlibEncoder, Compression as FlateCompression};
 
+/// The level of compression used by the Deflate algorithm.
+/// It allows trading compression ratio for compression speed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[non_exhaustive]
+#[derive(Default)]
+pub enum DeflateLevel {
+    /// The fastest possible compression mode.
+    Fast = 1,
+    /// The conservative choice between speed and ratio.
+    #[default]
+    Balanced = 6,
+    /// The best compression available with Deflate.
+    Best = 9,
+}
+
 /// The Deflate algorithm used to compress image data in TIFF files.
 #[derive(Debug, Clone, Copy)]
 pub struct Deflate {
@@ -9,13 +24,7 @@ pub struct Deflate {
 
 impl Deflate {
     /// Create a new deflate compressor with a specific level of compression.
-    ///
-    /// The valid levels are 1 through 9 inclusive. The default level is 6.
-    ///
-    /// - `1` stands for light but fast compression
-    /// - `6` is the recommended balanced default
-    /// - `9` is maximum compression ratio at the cost of slow encoding
-    pub fn with_level(level: u8) -> Self {
+    pub fn with_level(level: DeflateLevel) -> Self {
         Self {
             level: FlateCompression::new(level as u32),
         }
@@ -24,7 +33,7 @@ impl Deflate {
 
 impl Default for Deflate {
     fn default() -> Self {
-        Self::with_level(6)
+        Self::with_level(DeflateLevel::default())
     }
 }
 
