@@ -20,6 +20,7 @@ mod cycles;
 pub mod ifd;
 mod image;
 mod logluv;
+pub mod pluggable;
 mod stream;
 mod tag_reader;
 
@@ -531,6 +532,8 @@ where
     /// Map from the ifd into the `ifd_offsets` ordered list.
     seen_ifds: cycles::IfdCycles,
     image: Image,
+    /// Pluggable decompressors for tile/strip image data.
+    decompressors: pluggable::DecompressorRegistry,
 }
 
 /// All the information needed to read and interpret byte slices from the underlying file, i.e. to
@@ -904,6 +907,7 @@ impl TiffHeader {
             },
             seen_ifds: cycles::IfdCycles::new(),
             image: Image::no_image(),
+            decompressors: pluggable::DecompressorRegistry::new(),
         }
     }
 }
@@ -983,6 +987,22 @@ impl<R: Read + Seek> Decoder<R> {
     pub fn with_limits(mut self, limits: Limits) -> Decoder<R> {
         self.value_reader.limits = limits;
         self
+    }
+
+    /// Register a custom decompressor for the given compression method.
+    ///
+    /// When a tile or strip uses this compression method, the registered
+    /// decompressor will be called instead of the built-in decoder (if any).
+    /// This allows replacing or extending the built-in JPEG, WebP, or other
+    /// codec support with an external implementation.
+    ///
+    /// Calling this again with the same method replaces the previous decompressor.
+    pub fn set_decompressor(
+        &mut self,
+        method: crate::tags::CompressionMethod,
+        decompressor: Box<dyn pluggable::TileDecompressor>,
+    ) {
+        self.decompressors.set(method, decompressor);
     }
 
     pub fn dimensions(&mut self) -> TiffResult<(u32, u32)> {
@@ -1325,8 +1345,9 @@ impl<R: Read + Seek> Decoder<R> {
         let offset = self.image.chunk_file_range(chunk_index)?.0;
         self.goto_offset_u64(offset)?;
 
+        let custom = self.decompressors.get(&self.image.compression_method);
         self.image
-            .expand_chunk(&mut self.value_reader, buffer, layout, chunk_index)?;
+            .expand_chunk(&mut self.value_reader, buffer, layout, chunk_index, custom)?;
 
         Ok(())
     }
@@ -1498,15 +1519,19 @@ impl<R: Read + Seek> Decoder<R> {
         let used_plane_offsets = usize::from(layout.used_planes(buffer)?);
         debug_assert!(used_plane_offsets >= 1, "Should have errored");
 
+        let custom = self.decompressors.get(&self.image.compression_method);
         for (idx, &plane_offset) in plane_offsets[..used_plane_offsets].iter().enumerate() {
             let chunk = slice.0 + idx as u32 * readout.chunks_per_plane;
-            self.goto_offset_u64(self.image.chunk_offsets[chunk as usize])?;
+            self.value_reader
+                .reader
+                .goto_offset(self.image.chunk_offsets[chunk as usize])?;
 
             self.image.expand_chunk(
                 &mut self.value_reader,
                 &mut buffer[plane_offset..],
                 readout,
                 chunk,
+                custom,
             )?;
         }
 
@@ -1674,6 +1699,7 @@ impl<R: Read + Seek> Decoder<R> {
         // Possible improvements:
         // * pass requested band as parameter
         // * collect bands to a RGB encoding result in case of RGB bands
+        let custom = self.decompressors.get(&self.image.compression_method);
         for chunk in 0..readout.chunks_per_plane {
             let x = (chunk % readout.chunks_across) as usize;
             let y = (chunk / readout.chunks_across) as usize;
@@ -1682,13 +1708,16 @@ impl<R: Read + Seek> Decoder<R> {
 
             for (idx, &plane_offset) in plane_offsets[..used_plane_offsets].iter().enumerate() {
                 let chunk = chunk + idx as u32 * readout.chunks_per_plane;
-                self.goto_offset_u64(self.image.chunk_offsets[chunk as usize])?;
+                self.value_reader
+                    .reader
+                    .goto_offset(self.image.chunk_offsets[chunk as usize])?;
 
                 self.image.expand_chunk(
                     &mut self.value_reader,
                     &mut buffer[plane_offset..][buffer_offset..],
                     readout,
                     chunk,
+                    custom,
                 )?;
             }
         }

@@ -1024,6 +1024,7 @@ impl Image {
         buf: &mut [u8],
         layout: &ReadoutLayout,
         chunk_index: u32,
+        custom_decompressor: Option<&dyn super::pluggable::TileDecompressor>,
     ) -> TiffResult<()> {
         let ValueReader {
             reader,
@@ -1159,6 +1160,47 @@ impl Image {
 
         let is_all_bits = samples == data_samples;
         let is_output_chunk_rows = layout.row_stride == chunk_row_bytes;
+
+        // If a custom decompressor is registered for this compression method,
+        // use it instead of the built-in decompression pipeline.
+        if let Some(decompressor) = custom_decompressor {
+            let mut compressed = Vec::new();
+            reader
+                .inner()
+                .take(*compressed_bytes)
+                .read_to_end(&mut compressed)?;
+
+            let ctx = super::pluggable::TiffDecompressContext {
+                width: data_dims.0,
+                height: data_dims.1,
+                samples_per_pixel: self.samples,
+                jpeg_tables: self.jpeg_tables.as_deref().map(|a| &**a),
+                check_cancelled: None,
+            };
+
+            let output = decompressor.decompress(&compressed, &ctx)?;
+
+            // Copy decompressed pixels into the output buffer row by row,
+            // respecting the output layout's row stride.
+            let out_row_bytes = output.width as usize * output.samples_per_pixel as usize;
+            let src = &output.pixels;
+            for row_idx in 0..output.height as usize {
+                let src_start = row_idx * out_row_bytes;
+                let src_end = src_start + out_row_bytes;
+                if src_end > src.len() {
+                    break;
+                }
+                let dst_start = row_idx * layout.row_stride;
+                let copy_len = out_row_bytes.min(data_row_bytes);
+                let dst_end = dst_start + copy_len;
+                if dst_end > buf.len() {
+                    break;
+                }
+                buf[dst_start..dst_end].copy_from_slice(&src[src_start..src_start + copy_len]);
+            }
+
+            return Ok(());
+        }
 
         let mut reader = Self::create_reader(
             reader.inner(),

@@ -75,7 +75,9 @@ impl Compression {
             #[cfg(feature = "lzw")]
             Compression::Lzw => compression::Lzw {}.get_algorithm(),
             #[cfg(feature = "deflate")]
-            Compression::Deflate(ref level) => compression::Deflate::with_level(*level).get_algorithm(),
+            Compression::Deflate(ref level) => {
+                compression::Deflate::with_level(*level).get_algorithm()
+            }
             Compression::Packbits => compression::Packbits {}.get_algorithm(),
         }
     }
