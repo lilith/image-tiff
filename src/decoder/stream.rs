@@ -448,7 +448,7 @@ impl Group3Reader {
     ) -> Option<u16> {
         let mut sum = 0u16;
         while let Some(n) = decoder(reader) {
-            sum += n;
+            sum = sum.checked_add(n)?;
             if n < 64 {
                 return Some(sum);
             }
