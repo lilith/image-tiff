@@ -454,8 +454,9 @@ impl Image {
             match tag_reader.find_tag(Tag::ColorMap)? {
                 Some(v) => {
                     let map = v.into_u16_vec()?;
-                    let expected_len = 3usize
-                        .checked_mul(1usize << bits_per_sample)
+                    let expected_len = 1usize
+                        .checked_shl(bits_per_sample.into())
+                        .and_then(|entries| 3usize.checked_mul(entries))
                         .ok_or(TiffError::LimitsExceeded)?;
                     if map.len() != expected_len {
                         return Err(TiffError::FormatError(
