@@ -14,7 +14,22 @@ authors = ["The image-rs Developers"]
 repository = "https://github.com/image-rs/image-tiff"
 categories = ["multimedia::images", "multimedia::encoding"]
 
-exclude = ["tests/images/*", "tests/fuzz_images/*", "tests/**/*.tif"]
+exclude = [
+    "tests/images/*",
+    "tests/fuzz_images/*",
+    "tests/**/*.tif",
+    "CLAUDE.md",
+    "CONTEXT-HANDOFF.md",
+    "FEEDBACK.md",
+    ".claude/",
+    ".superwork/",
+    ".zenbench/",
+    "copter-report/",
+    "Cross.toml",
+    "justfile",
+    "Cargo.toml.original.txt",
+    "fuzz/",
+]
 
 [dependencies]
 half = { version = "2.4.1" }
