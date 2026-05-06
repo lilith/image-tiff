@@ -410,8 +410,8 @@ impl Group3Reader {
         // Cast u64 -> usize via try_from (catches truncation on 32-bit) and
         // bound against `intermediate_buffer_size` so an attacker-controlled
         // strip byte count cannot trigger an unbounded allocation here.
-        let compressed_len_usize = usize::try_from(compressed_length)
-            .map_err(|_| crate::TiffError::LimitsExceeded)?;
+        let compressed_len_usize =
+            usize::try_from(compressed_length).map_err(|_| crate::TiffError::LimitsExceeded)?;
         if compressed_len_usize > limits.intermediate_buffer_size {
             return Err(crate::TiffError::LimitsExceeded);
         }

@@ -669,6 +669,7 @@ impl Image {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn create_reader<'r, R: 'r + Read + Seek>(
         reader: R,
         compression_method: CompressionMethod,
