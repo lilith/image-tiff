@@ -402,12 +402,22 @@ impl Group3Reader {
         reader: R,
         compressed_length: u64,
         fill_order: u16,
+        limits: &super::Limits,
     ) -> crate::TiffResult<Self> {
         let width = u16::try_from(dimensions.0)?;
         let height = dimensions.1;
 
+        // Cast u64 -> usize via try_from (catches truncation on 32-bit) and
+        // bound against `intermediate_buffer_size` so an attacker-controlled
+        // strip byte count cannot trigger an unbounded allocation here.
+        let compressed_len_usize = usize::try_from(compressed_length)
+            .map_err(|_| crate::TiffError::LimitsExceeded)?;
+        if compressed_len_usize > limits.intermediate_buffer_size {
+            return Err(crate::TiffError::LimitsExceeded);
+        }
+
         // Buffer all compressed data and apply FillOrder bit reversal
-        let mut compressed = vec![0u8; compressed_length as usize];
+        let mut compressed = vec![0u8; compressed_len_usize];
         reader.take(compressed_length).read_exact(&mut compressed)?;
         if fill_order == 2 {
             for b in &mut compressed {

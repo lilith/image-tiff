@@ -781,6 +781,7 @@ impl Image {
                 reader,
                 compressed_length,
                 fill_order,
+                limits,
             )?),
             #[cfg(feature = "fax")]
             CompressionMethod::Fax4 => Box::new(super::stream::Group4Reader::new(
