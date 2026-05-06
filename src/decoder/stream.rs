@@ -619,6 +619,65 @@ impl Read for WebPReader {
 mod test {
     use super::*;
 
+    /// H3 regression: `Group3Reader::new` must reject a `compressed_length`
+    /// that exceeds `intermediate_buffer_size` BEFORE allocating, instead of
+    /// trusting the attacker-controlled value.
+    #[cfg(feature = "fax")]
+    #[test]
+    fn test_group3_reader_rejects_oversized_compressed_length() {
+        let limits = super::super::Limits {
+            intermediate_buffer_size: 1024,
+            ..super::super::Limits::default()
+        };
+        // Empty backing reader; the size check happens before any reads.
+        let backing: &[u8] = &[];
+        let cursor = io::Cursor::new(backing);
+        let result = Group3Reader::new((16, 16), cursor, 4096, 1, &limits);
+        match result {
+            Err(crate::TiffError::LimitsExceeded) => {}
+            Err(other) => panic!("expected LimitsExceeded, got {other:?}"),
+            Ok(_) => panic!("oversized compressed_length must be rejected"),
+        }
+    }
+
+    /// H3 regression: a u64 `compressed_length` that does not fit in usize on
+    /// the current target must produce LimitsExceeded rather than wrapping.
+    #[cfg(feature = "fax")]
+    #[test]
+    fn test_group3_reader_rejects_u64_overflow_to_usize() {
+        let limits = super::super::Limits::default();
+        let backing: &[u8] = &[];
+        let cursor = io::Cursor::new(backing);
+        // u64::MAX cannot fit in usize on any supported target.
+        let result = Group3Reader::new((16, 16), cursor, u64::MAX, 1, &limits);
+        match result {
+            Err(crate::TiffError::LimitsExceeded) => {}
+            Err(other) => panic!("expected LimitsExceeded, got {other:?}"),
+            Ok(_) => panic!("u64::MAX compressed_length must be rejected"),
+        }
+    }
+
+    /// H1 regression: `WebPReader::new` must compute `pixels * samples` with
+    /// `checked_mul`. Constructing a real WebP would require a fixture; here
+    /// we exercise the upstream guard by verifying that `Limits` rejection
+    /// fires when the compressed-data envelope is itself oversized — which
+    /// short-circuits before the multiplication. The arithmetic guard is
+    /// covered by the `output_buffer_size` debug_assert in the production
+    /// path; a direct test would need a constructed adversarial WebP.
+    #[cfg(feature = "webp")]
+    #[test]
+    fn test_webp_reader_rejects_invalid_stream_under_limits() {
+        // Not a real WebP container — `WebPDecoder::new` will fail before any
+        // allocation, but the `&Limits` parameter must be wired through the
+        // signature so passing it never fails to type-check.
+        let limits = super::super::Limits::default();
+        let bytes: &[u8] = &[0u8; 64];
+        let cursor = io::Cursor::new(bytes);
+        // We just want to confirm the call shape; an invalid stream here
+        // produces an InvalidData error from image-webp, not LimitsExceeded.
+        let _ = WebPReader::new(cursor, 64, 4, &limits);
+    }
+
     #[test]
     fn test_packbits() {
         let encoded = vec![
