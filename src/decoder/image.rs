@@ -678,6 +678,11 @@ impl Image {
         dimensions: (u32, u32),
         samples: u16,
         #[cfg_attr(not(feature = "fax"), allow(unused_variables))] fill_order: u16,
+        #[cfg_attr(
+            not(any(feature = "webp", feature = "fax", feature = "jpeg")),
+            allow(unused_variables)
+        )]
+        limits: &super::Limits,
     ) -> TiffResult<Box<dyn Read + 'r>> {
         Ok(match compression_method {
             CompressionMethod::None => Box::new(reader),
@@ -789,6 +794,7 @@ impl Image {
                 reader,
                 compressed_length,
                 samples,
+                limits,
             )?),
 
             method => {
@@ -1155,6 +1161,7 @@ impl Image {
             chunk_dims,
             self.samples,
             self.fill_order,
+            limits,
         )?;
 
         // Extended bit depths (9-15, 17-31): packed N-bit samples must be unpacked to
