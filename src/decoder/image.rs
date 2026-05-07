@@ -669,6 +669,7 @@ impl Image {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn create_reader<'r, R: 'r + Read + Seek>(
         reader: R,
         compression_method: CompressionMethod,
@@ -678,6 +679,11 @@ impl Image {
         dimensions: (u32, u32),
         samples: u16,
         #[cfg_attr(not(feature = "fax"), allow(unused_variables))] fill_order: u16,
+        #[cfg_attr(
+            not(any(feature = "webp", feature = "fax", feature = "jpeg")),
+            allow(unused_variables)
+        )]
+        limits: &super::Limits,
     ) -> TiffResult<Box<dyn Read + 'r>> {
         Ok(match compression_method {
             CompressionMethod::None => Box::new(reader),
@@ -737,6 +743,21 @@ impl Image {
                 // bytes of the remaining JPEG data is removed because it follows `jpeg_tables`.
                 // Similary, `jpeg_tables` ends with a `EOI` (HEX: `0xFFD9`) or __end of image__ marker,
                 // this has to be removed as well (last two bytes of `jpeg_tables`).
+                // Compute the maximum size of the buffered JPEG payload
+                // (JPEGTables + strip bytes minus the duplicated SOI/EOI
+                // markers we splice out) and cap it against
+                // `intermediate_buffer_size` BEFORE we slurp it. The outer
+                // strip cap already bounds `compressed_length`, but the
+                // per-IFD JPEGTables blob is unbounded relative to that and
+                // gets concatenated here.
+                let jpeg_tables_len = jpeg_tables.map_or(0, |t| t.len().saturating_sub(2));
+                let max_jpeg_bytes = (compressed_length as usize)
+                    .checked_add(jpeg_tables_len)
+                    .ok_or(TiffError::LimitsExceeded)?;
+                if max_jpeg_bytes > limits.intermediate_buffer_size {
+                    return Err(TiffError::LimitsExceeded);
+                }
+
                 let mut jpeg_reader = match jpeg_tables {
                     Some(jpeg_tables) => {
                         let mut reader = reader.take(compressed_length);
@@ -750,8 +771,14 @@ impl Image {
                     None => Box::new(reader.take(compressed_length)),
                 };
 
-                let mut jpeg_data = Vec::new();
-                jpeg_reader.read_to_end(&mut jpeg_data)?;
+                // Pre-size and length-cap the buffered JPEG. `read_to_end`
+                // would grow without bound; `Take` + `with_capacity` keeps
+                // the allocation aligned with the limit we just enforced.
+                let mut jpeg_data = Vec::with_capacity(max_jpeg_bytes);
+                jpeg_reader
+                    .by_ref()
+                    .take(max_jpeg_bytes as u64)
+                    .read_to_end(&mut jpeg_data)?;
 
                 let mut decoder =
                     zune_jpeg::JpegDecoder::new(zune_core::bytestream::ZCursor::new(jpeg_data));
@@ -776,6 +803,7 @@ impl Image {
                 reader,
                 compressed_length,
                 fill_order,
+                limits,
             )?),
             #[cfg(feature = "fax")]
             CompressionMethod::Fax4 => Box::new(super::stream::Group4Reader::new(
@@ -789,6 +817,7 @@ impl Image {
                 reader,
                 compressed_length,
                 samples,
+                limits,
             )?),
 
             method => {
@@ -1155,6 +1184,7 @@ impl Image {
             chunk_dims,
             self.samples,
             self.fill_order,
+            limits,
         )?;
 
         // Extended bit depths (9-15, 17-31): packed N-bit samples must be unpacked to
