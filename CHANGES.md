@@ -1,6 +1,11 @@
 # Version 0.12.0 (unreleased)
 
 Additions:
+- Added `tests/fuzz_regression.rs` regression-harness template ported
+  from zenwebp (DEDUP-J). Walks `fuzz/regression/` and runs every seed
+  through `TiffHeader::parse` plus bounded `Decoder::read_image` on the
+  stable toolchain — no nightly required. Drop minimized crash files
+  into `fuzz/regression/` to gate future regressions of fixed bugs.
 - Added the `TiffHeader` type. It can be used to create a `Decoder` in a state
   before the first IFD and allows opening files at an arbitrary first IFD
   offset rather than one indicated by an encoded header at the start.
