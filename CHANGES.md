@@ -6,6 +6,13 @@ Additions:
   through `TiffHeader::parse` plus bounded `Decoder::read_image` on the
   stable toolchain — no nightly required. Drop minimized crash files
   into `fuzz/regression/` to gate future regressions of fixed bugs.
+
+Changes:
+- `tests/fuzz_regression.rs` now uses the shared `zen-fuzz-regress`
+  test-helper crate (DEDUP-J2). Behaviour is unchanged — same
+  `fuzz/regression/` seeds, same two targets (`decode_comprehensive`,
+  `decode_image`). The in-file `collect_seeds` scaffolding is now
+  provided by `RegressionSuite`.
 - Added the `TiffHeader` type. It can be used to create a `Decoder` in a state
   before the first IFD and allows opening files at an arbitrary first IFD
   offset rather than one indicated by an encoded header at the start.
