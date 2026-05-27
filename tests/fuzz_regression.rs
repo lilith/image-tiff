@@ -2,7 +2,7 @@
 //! entry point. Shared scaffolding lives in `zen-fuzz-regress`.
 
 use std::io::Cursor;
-use zen_fuzz_regress::RegressionSuite;
+use zenutils_fuzz::RegressionSuite;
 
 fn restrictive_limits() -> tiff::decoder::Limits {
     let mut limits = tiff::decoder::Limits::default();

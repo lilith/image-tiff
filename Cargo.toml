@@ -45,7 +45,7 @@ image-webp = {version = "0.2.4", optional = true }
 
 [dev-dependencies]
 criterion = "0.3.1"
-zen-fuzz-regress = { path = "../zen-fuzz-regress", version = "0.1.0" }
+zenutils-fuzz = "0.1.0"
 # We may already depend on this via flate2
 crc32fast = "1.5"
 libtest-mimic = "0.8.1"
