@@ -15,9 +15,14 @@ repository = "https://github.com/image-rs/image-tiff"
 categories = ["multimedia::images", "multimedia::encoding"]
 
 exclude = [
-    "tests/images/*",
-    "tests/fuzz_images/*",
-    "tests/**/*.tif",
+    # Test fixtures & test source (downstream consumers don't build tests)
+    "tests/",
+    # Bench source & fixtures (bench declarations kept above; files not needed downstream)
+    "benches/",
+    # CI configuration
+    ".github/",
+    # Dev tooling noise
+    ".gitignore",
     "CLAUDE.md",
     "CONTEXT-HANDOFF.md",
     "FEEDBACK.md",
