@@ -1,0 +1,92 @@
+# tiff public API — doc(hidden) items and excluded-feature surface
+# excluded features: (none)
+# (regenerated on every `cargo test` by zenutils-apidoc; ZEN_API_DOC=check verifies, =off skips).
+# Encodings: crate-name prefix stripped; auto traits collapse to a
+# count + exceptions; trait impls collapse to one roster line per
+# type (method signatures live at the trait definition); blanket
+# impls omitted; re-export duplicates annotated `[also: path]`.
+# DO NOT EDIT BY HAND — commit regenerated changes with the code.
+
+## summary
+#
+#   pub types (struct/enum/trait/alias)         1
+#   inherent methods                           40
+#   trait roster entries (type × trait)        25
+#
+# per-module pub lines:
+#   (root)                            2
+#   decoder                          20
+#   encoder                           7
+#   tags                             12
+
+## items (41 lines)
+
+pub fn ColorType::assert_fields_are_eq(&self)
+pub fn TiffUnsupportedError::assert_fields_are_eq(&self)
+pub fn decoder::Decoder<R>::find_tag(&mut self, tags::Tag) -> TiffResult<core::option::Option<decoder::ifd::Value>>
+pub fn decoder::Decoder<R>::find_tag_unsigned<T: core::convert::TryFrom<u64>>(&mut self, tags::Tag) -> TiffResult<core::option::Option<T>>
+pub fn decoder::Decoder<R>::find_tag_unsigned_vec<T: core::convert::TryFrom<u64>>(&mut self, tags::Tag) -> TiffResult<core::option::Option<alloc::vec::Vec<T>>>
+pub fn decoder::Decoder<R>::get_tag(&mut self, tags::Tag) -> TiffResult<decoder::ifd::Value>
+pub fn decoder::Decoder<R>::get_tag_ascii_string(&mut self, tags::Tag) -> TiffResult<alloc::string::String>
+pub fn decoder::Decoder<R>::get_tag_f32(&mut self, tags::Tag) -> TiffResult<f32>
+pub fn decoder::Decoder<R>::get_tag_f32_vec(&mut self, tags::Tag) -> TiffResult<alloc::vec::Vec<f32>>
+pub fn decoder::Decoder<R>::get_tag_f64(&mut self, tags::Tag) -> TiffResult<f64>
+pub fn decoder::Decoder<R>::get_tag_f64_vec(&mut self, tags::Tag) -> TiffResult<alloc::vec::Vec<f64>>
+pub fn decoder::Decoder<R>::get_tag_u16_vec(&mut self, tags::Tag) -> TiffResult<alloc::vec::Vec<u16>>
+pub fn decoder::Decoder<R>::get_tag_u32(&mut self, tags::Tag) -> TiffResult<u32>
+pub fn decoder::Decoder<R>::get_tag_u32_vec(&mut self, tags::Tag) -> TiffResult<alloc::vec::Vec<u32>>
+pub fn decoder::Decoder<R>::get_tag_u64(&mut self, tags::Tag) -> TiffResult<u64>
+pub fn decoder::Decoder<R>::get_tag_u64_vec(&mut self, tags::Tag) -> TiffResult<alloc::vec::Vec<u64>>
+pub fn decoder::Decoder<R>::get_tag_u8_vec(&mut self, tags::Tag) -> TiffResult<alloc::vec::Vec<u8>>
+pub fn decoder::Decoder<R>::get_tag_unsigned<T: core::convert::TryFrom<u64>>(&mut self, tags::Tag) -> TiffResult<T>
+pub fn decoder::Decoder<R>::tag_iter(&mut self) -> impl core::iter::traits::iterator::Iterator<Item = TiffResult<(tags::Tag, decoder::ifd::Value)>> + '_
+pub fn decoder::DecodingSampleType::assert_fields_are_eq(&self)
+pub fn decoder::TiffCodingUnit::assert_fields_are_eq(&self)
+pub fn encoder::DirectoryOffset<K>::assert_fields_are_eq(&self)
+pub fn encoder::Ifd8::assert_fields_are_eq(&self)
+pub fn encoder::Ifd::assert_fields_are_eq(&self)
+pub fn encoder::TiffEncoder<W, K>::new_directory(&mut self) -> TiffResult<encoder::DirectoryEncoder<'_, W, K>>
+pub fn encoder::compression::Lzw::assert_fields_are_eq(&self)
+pub fn encoder::compression::Packbits::assert_fields_are_eq(&self)
+pub fn encoder::compression::Uncompressed::assert_fields_are_eq(&self)
+pub fn tags::ByteOrder::assert_fields_are_eq(&self)
+pub fn tags::CompressionMethod::assert_fields_are_eq(&self)
+pub fn tags::ExtraSamples::assert_fields_are_eq(&self)
+pub fn tags::IfdPointer::assert_fields_are_eq(&self)
+pub fn tags::PhotometricInterpretation::assert_fields_are_eq(&self)
+pub fn tags::PlanarConfiguration::assert_fields_are_eq(&self)
+pub fn tags::Predictor::assert_fields_are_eq(&self)
+pub fn tags::ResolutionUnit::assert_fields_are_eq(&self)
+pub fn tags::SampleFormat::assert_fields_are_eq(&self)
+pub fn tags::Tag::assert_fields_are_eq(&self)
+pub fn tags::TiffVariant::assert_fields_are_eq(&self)
+pub fn tags::Type::assert_fields_are_eq(&self)
+pub type decoder::ifd::Directory = std::collections::hash::map::HashMap<tags::Tag, decoder::ifd::Entry>
+
+## trait impls (25 types)
+
+ColorType: TrivialClone
+decoder::ChunkType: TrivialClone
+decoder::DecodingSampleType: TrivialClone
+decoder::TiffCodingUnit: TrivialClone
+encoder::Compression: TrivialClone
+encoder::Ifd: TrivialClone
+encoder::Ifd8: TrivialClone
+encoder::Rational: TrivialClone
+encoder::SRational: TrivialClone
+encoder::compression::Deflate: TrivialClone
+encoder::compression::Lzw: TrivialClone
+encoder::compression::Packbits: TrivialClone
+encoder::compression::Uncompressed: TrivialClone
+tags::ByteOrder: TrivialClone
+tags::CompressionMethod: TrivialClone
+tags::ExtraSamples: TrivialClone
+tags::IfdPointer: TrivialClone
+tags::PhotometricInterpretation: TrivialClone
+tags::PlanarConfiguration: TrivialClone
+tags::Predictor: TrivialClone
+tags::ResolutionUnit: TrivialClone
+tags::SampleFormat: TrivialClone
+tags::Tag: TrivialClone
+tags::TiffVariant: TrivialClone
+tags::Type: TrivialClone

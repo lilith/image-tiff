@@ -16,10 +16,6 @@ concurrency:
   group: fuzz-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  # Public-API snapshot regen is not this workflow's concern (see rust.yml)
-  ZEN_API_DOC: off
-
 jobs:
   fuzz:
     name: Fuzz (${{ matrix.target }})

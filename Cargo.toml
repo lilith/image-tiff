@@ -36,6 +36,8 @@ exclude = [
     "justfile",
     "Cargo.toml.original.txt",
     "fuzz/",
+    # Public-API snapshot runner (own workspace, never built by this package)
+    "apidoc/",
 ]
 
 [dependencies]
@@ -57,8 +59,6 @@ zenutils-fuzz = "0.1.0"
 crc32fast = "1.5"
 libtest-mimic = "0.8.1"
 walkdir = "2.5"
-# tests/public_api_doc.rs (public-API surface snapshot regen)
-serde_json = "1.0.150"
 
 [features]
 default = ["deflate", "fax", "jpeg", "lzw"]

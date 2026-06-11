@@ -2,6 +2,10 @@
 /target/
 **/*.rs.bk
 Cargo.lock
+# apidoc/ snapshot runner: its target dir is ignored, its lockfile is
+# committed (negation must follow the global Cargo.lock ignore above).
+apidoc/target/
+!apidoc/Cargo.lock
 tests/benches/corpus/
 
 # Tooling noise
