@@ -45,7 +45,10 @@ half = { version = "2.4.1" }
 quick-error = "2.0.1"
 
 # Rename to avoid confusion with the feature name.
-fax34 = { package = "fax", version = "0.2.6", optional = true }
+# 0.2.7 fixes a subtract-with-overflow panic on malformed CCITT input
+# (fax-0.2.6 src/lib.rs:183, found by the fuzz farm — see #5). Keep the
+# minimum at 0.2.7 so the fix can't be resolved away.
+fax34 = { package = "fax", version = "0.2.7", optional = true }
 flate2 = { version = "1.0.20", optional = true }
 weezl = { version = "0.2.1", optional = true }
 zstd = { version = "0.13", optional = true }
