@@ -455,8 +455,8 @@ impl Image {
                 Some(v) => {
                     let map = v.into_u16_vec()?;
                     let expected_len = 1usize
-                        .checked_shl(bits_per_sample.into())
-                        .and_then(|entries| 3usize.checked_mul(entries))
+                        .checked_shl(bits_per_sample as u32)
+                        .and_then(|n| n.checked_mul(3))
                         .ok_or(TiffError::LimitsExceeded)?;
                     if map.len() != expected_len {
                         return Err(TiffError::FormatError(
@@ -660,12 +660,14 @@ impl Image {
                 ),
             )),
             PhotometricInterpretation::RGBPalette => Ok(ColorType::Palette(self.bits_per_sample)),
-            PhotometricInterpretation::TransparencyMask => Err(TiffError::UnsupportedError(
-                TiffUnsupportedError::InterpretationWithBits(
-                    self.photometric_interpretation,
-                    vec![self.bits_per_sample; self.samples as usize],
-                ),
-            )),
+            PhotometricInterpretation::TransparencyMask | PhotometricInterpretation::Unknown(_) => {
+                Err(TiffError::UnsupportedError(
+                    TiffUnsupportedError::InterpretationWithBits(
+                        self.photometric_interpretation,
+                        vec![self.bits_per_sample; self.samples as usize],
+                    ),
+                ))
+            }
         }
     }
 
