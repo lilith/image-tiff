@@ -1228,6 +1228,12 @@ impl Image {
                     scratch,
                 );
 
+                // A promoted extended-depth sample can carry bits above the
+                // declared depth after the predictor (reconstructed in the u16/u32
+                // storage width). Clamp to the declared max so *both* the inverted
+                // and non-inverted paths see in-range values.
+                super::clamp_samples_to_bit_depth(out_row, tiff_bps, out_bps, self.sample_format);
+
                 if photometric_interpretation == PhotometricInterpretation::WhiteIsZero {
                     super::invert_colors(out_row, color_type, self.sample_format)?;
                 }
