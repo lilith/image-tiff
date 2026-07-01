@@ -566,6 +566,41 @@ fn fix_endianness_and_predict(
     }
 }
 
+/// Clamp promoted extended-depth samples (9–15 bits → `u16`, 17–31 bits → `u32`)
+/// to their declared bit-depth maximum `(1 << n) - 1`.
+///
+/// A decoded sample can carry bits above the declared depth — the horizontal
+/// predictor reconstructs `prev + delta` in the promoted storage width (`u16`/
+/// `u32`) rather than modulo `2^BitsPerSample`, and malformed input can set the
+/// padding bits directly. Clamping here enforces the declared range for *all*
+/// downstream consumers (both the inverted and the non-inverted color paths),
+/// not just `invert_colors`. For well-formed samples (`v <= max`) it is a no-op.
+fn clamp_samples_to_bit_depth(
+    buf: &mut [u8],
+    declared_bits: u8,
+    storage_bits: u8,
+    sample_format: SampleFormat,
+) {
+    if sample_format != SampleFormat::Uint {
+        return;
+    }
+    match storage_bits {
+        16 if declared_bits < 16 => {
+            let max = (1u16 << declared_bits) - 1;
+            for chunk in buf.as_chunks_mut::<2>().0 {
+                *chunk = u16::from_ne_bytes(*chunk).min(max).to_ne_bytes();
+            }
+        }
+        32 if declared_bits < 32 => {
+            let max = (1u32 << declared_bits) - 1;
+            for chunk in buf.as_chunks_mut::<4>().0 {
+                *chunk = u32::from_ne_bytes(*chunk).min(max).to_ne_bytes();
+            }
+        }
+        _ => {}
+    }
+}
+
 fn invert_colors(
     buf: &mut [u8],
     color_type: ColorType,
