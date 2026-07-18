@@ -422,6 +422,29 @@ fn test_too_many_value_bytes() {
     }
 }
 
+/// A tiled TIFF with a 1x1 image but `TileWidth`/`TileLength` = 0x40000000 and a
+/// tiny `TileByteCounts`. The per-tile-row scratch buffer is sized from the
+/// (attacker-controlled) `TileWidth`, so without a row-width limit this allocates
+/// ~1 GB despite the tiny image and compressed segment. Must return
+/// `LimitsExceeded` (security audit 2026-07-18 C8), not OOM.
+#[test]
+fn tiled_tiff_with_huge_tile_width_is_limited() {
+    let image = [
+        73, 73, 42, 0, 8, 0, 0, 0, 11, 0, 0, 1, 4, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 4, 0, 1, 0, 0,
+        0, 1, 0, 0, 0, 2, 1, 3, 0, 1, 0, 0, 0, 8, 0, 0, 0, 3, 1, 3, 0, 1, 0, 0, 0, 1, 0, 0, 0, 6,
+        1, 3, 0, 1, 0, 0, 0, 1, 0, 0, 0, 21, 1, 3, 0, 1, 0, 0, 0, 1, 0, 0, 0, 66, 1, 4, 0, 1, 0, 0,
+        0, 0, 0, 0, 64, 67, 1, 4, 0, 1, 0, 0, 0, 0, 0, 0, 64, 68, 1, 4, 0, 1, 0, 0, 0, 146, 0, 0,
+        0, 69, 1, 4, 0, 1, 0, 0, 0, 8, 0, 0, 0, 83, 1, 3, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    ];
+    let mut decoder = tiff::decoder::Decoder::new(std::io::Cursor::new(&image))
+        .expect("the crafted IFD itself is well-formed and must load");
+    match decoder.read_image().unwrap_err() {
+        tiff::TiffError::LimitsExceeded => {}
+        unexpected => panic!("expected LimitsExceeded, got {unexpected}"),
+    }
+}
+
 #[test]
 fn fuzzer_testcase5() {
     let image = [

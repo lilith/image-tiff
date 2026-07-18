@@ -914,6 +914,17 @@ impl Image {
         let chunk_row_bytes: usize = layout.tiff_row_bytes;
         let data_row_bytes: usize = layout.chunk_row_bytes(data_dims.0)?;
 
+        // `chunk_row_bytes` is the byte width of one tile/strip row, derived from
+        // the attacker-controlled TileWidth (or RowsPerStrip). Upstream only guards
+        // it against integer overflow, so a crafted tiny image with an enormous
+        // TileWidth passes the image-size (`decoding_buffer_size`) and compressed-
+        // segment (`intermediate_buffer_size`) checks yet still drives a multi-GB
+        // scratch allocation from the per-row buffers below. Bound the row width by
+        // the same intermediate-buffer limit that gates the compressed segment.
+        if chunk_row_bytes > limits.intermediate_buffer_size {
+            return Err(TiffError::LimitsExceeded);
+        }
+
         // TODO: Should these return errors instead?
         assert!(layout.minimum_row_stride >= data_row_bytes);
         assert!(buf.len() >= layout.row_stride * (data_dims.1 as usize - 1) + data_row_bytes);
