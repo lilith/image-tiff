@@ -57,6 +57,8 @@ image-webp = {version = "0.2.4", optional = true }
 
 [dev-dependencies]
 criterion = "0.3.1"
+# Workspace standard for new benches (interleaved arms + paired statistics).
+zenbench = "0.1.7"
 zenutils-fuzz = "0.1.0"
 # We may already depend on this via flate2
 crc32fast = "1.5"
@@ -90,4 +92,8 @@ harness = false
 [[test]]
 name = "decode_libtiffpic"
 path = "tests/decode_libtiffpic.rs"
+harness = false
+
+[[bench]]
+name = "predictor_share"
 harness = false
