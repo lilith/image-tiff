@@ -27,6 +27,15 @@ Changes:
   directory state if they fail. This includes the failure to interpret an IFD
   as a supported image in the case of `*_image` variants.
 
+Bugfixes:
+- Bounded the per-row scratch allocation in `Image::expand_chunk` against
+  `Limits::intermediate_buffer_size`. A malformed strip/tile could declare a
+  multi-gigabyte decoded row width (`chunk_row_bytes`, from
+  TileWidth/ImageWidth) while carrying a tiny compressed payload, so
+  `read_chunk`/`read_image` attempted a ~4 GB allocation regardless of the
+  configured decoder limits. Now rejected with `TiffError::LimitsExceeded`
+  before allocating (fuzz farm #7, #8).
+
 Compatibility:
 - Changed how tiled TIFF files are detected. The presence of a TileWidth OR
   TileHeight/TileLength tag now marks an image as tiled. Data is no retrieved

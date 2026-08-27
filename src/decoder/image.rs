@@ -1171,6 +1171,19 @@ impl Image {
         let chunk_row_bytes: usize = layout.tiff_row_bytes;
         let data_row_bytes: usize = layout.chunk_row_bytes(data_dims.0)?;
 
+        // `chunk_row_bytes` is the decoded (uncompressed) width of one
+        // tile/strip row, derived from the chunk's declared pixel width times
+        // bits-per-sample. It is attacker-controlled and *unbounded* by the
+        // compressed-size cap above — a strip with a tiny compressed payload
+        // can still declare a multi-gigabyte decoded row width. Several
+        // branches below allocate a `vec![0u8; chunk_row_bytes]` scratch row,
+        // so cap it against `intermediate_buffer_size` BEFORE any of them run.
+        // (Found by the fuzz farm: a strip decode requesting a ~4 GB row
+        // buffer — issues #7 / #8.)
+        if chunk_row_bytes > limits.intermediate_buffer_size {
+            return Err(TiffError::LimitsExceeded);
+        }
+
         // TODO: Should these return errors instead?
         assert!(layout.minimum_row_stride >= data_row_bytes);
         assert!(buf.len() >= layout.row_stride * (data_dims.1 as usize - 1) + data_row_bytes);

@@ -28,6 +28,11 @@ fn fuzz_regression() {
             let _ = decoder.colortype();
             if dims_ok {
                 let _ = decoder.get_chunk_type();
+                // Exercise the bounded chunk-decode path (expand_chunk). A
+                // malformed strip can declare a multi-gigabyte decoded row
+                // width; this must fail on the limit, not allocate it (#7/#8).
+                let _ = decoder.read_chunk(0);
+                let _ = decoder.read_image();
             }
         })
         .target("decode_image", |data| {
