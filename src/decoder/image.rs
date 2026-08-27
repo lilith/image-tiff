@@ -921,39 +921,53 @@ impl Image {
             _ => 64,
         };
 
+        // Every byte length below is computed in `u64` (so the arithmetic itself is
+        // pointer-width independent) and only then narrowed to a `usize` buffer length.
+        // All decoder `Limits` are `usize`, so a length that does not fit `usize` exceeds
+        // every configurable limit by definition; report it as `LimitsExceeded`, exactly
+        // like the `u64` overflow case above, rather than `IntSizeError`. Otherwise the
+        // same malformed file (e.g. a strip declaring a ~4 GiB decoded row) fails with
+        // `LimitsExceeded` on 64-bit but `IntSizeError` on 32-bit targets — the limit
+        // check in `expand_chunk` would never be reached there.
+        fn buffer_len(bytes: u64) -> TiffResult<usize> {
+            usize::try_from(bytes).map_err(|_| TiffError::LimitsExceeded)
+        }
+
         // Packed row size for reading from the file (uses tiff_bits_per_sample).
         let tiff_row_bits = (u64::from(tiff_chunk_dimensions.0) * u64::from(tiff_bits_per_sample))
             .checked_mul(u64::from(tiff_samples))
             .ok_or(TiffError::LimitsExceeded)?;
-        let tiff_row_bytes: usize = tiff_row_bits.div_ceil(8).try_into()?;
+        let tiff_row_bytes: usize = buffer_len(tiff_row_bits.div_ceil(8))?;
 
         // Output buffer sizes use output_bits_per_sample (the promoted width).
         let chunk_row_bits = (u64::from(tiff_chunk_dimensions.0)
             * u64::from(output_bits_per_sample))
         .checked_mul(u64::from(data_samples))
         .ok_or(TiffError::LimitsExceeded)?;
-        let chunk_row_bytes: usize = chunk_row_bits.div_ceil(8).try_into()?;
+        let chunk_row_bytes: usize = buffer_len(chunk_row_bits.div_ceil(8))?;
 
         let data_row_bits = (u64::from(data_dimensions.0) * u64::from(output_bits_per_sample))
             .checked_mul(u64::from(data_samples))
             .ok_or(TiffError::LimitsExceeded)?;
-        let data_row_bytes: usize = data_row_bits.div_ceil(8).try_into()?;
+        let data_row_bytes: usize = buffer_len(data_row_bits.div_ceil(8))?;
 
         // Clamp the chunk height to the image height: a chunk never contributes more
         // rows than the image contains. Without this, RowsPerStrip = u32::MAX overflows
         // usize on 32-bit platforms.
         let clamped_chunk_height = tiff_chunk_dimensions.1.min(data_dimensions.1);
-        let chunk_col_stride: usize = data_row_bits
-            .div_ceil(8)
-            .checked_mul(u64::from(clamped_chunk_height))
-            .ok_or(TiffError::LimitsExceeded)?
-            .try_into()?;
+        let chunk_col_stride: usize = buffer_len(
+            data_row_bits
+                .div_ceil(8)
+                .checked_mul(u64::from(clamped_chunk_height))
+                .ok_or(TiffError::LimitsExceeded)?,
+        )?;
 
-        let plane_stride: usize = data_row_bits
-            .div_ceil(8)
-            .checked_mul(u64::from(data_dimensions.1))
-            .ok_or(TiffError::LimitsExceeded)?
-            .try_into()?;
+        let plane_stride: usize = buffer_len(
+            data_row_bits
+                .div_ceil(8)
+                .checked_mul(u64::from(data_dimensions.1))
+                .ok_or(TiffError::LimitsExceeded)?,
+        )?;
 
         let minimum_row_stride = data_row_bytes;
 
@@ -1179,7 +1193,9 @@ impl Image {
         // branches below allocate a `vec![0u8; chunk_row_bytes]` scratch row,
         // so cap it against `intermediate_buffer_size` BEFORE any of them run.
         // (Found by the fuzz farm: a strip decode requesting a ~4 GB row
-        // buffer — issues #7 / #8.)
+        // buffer — issues #7 / #8.) `readout_for_size` already maps a row that
+        // does not even fit `usize` to `LimitsExceeded`, so this check produces
+        // the same error on 32- and 64-bit targets.
         if chunk_row_bytes > limits.intermediate_buffer_size {
             return Err(TiffError::LimitsExceeded);
         }
@@ -1505,7 +1521,9 @@ impl ReadoutLayout {
         let data_row_bits = (u64::from(width) * u64::from(self.output_bits_per_sample))
             .checked_mul(u64::from(data_samples))
             .ok_or(TiffError::LimitsExceeded)?;
-        Ok(data_row_bits.div_ceil(8).try_into()?)
+        // Same rule as `readout_for_size`: a row that does not fit `usize` exceeds every
+        // `usize` limit, on any pointer width.
+        usize::try_from(data_row_bits.div_ceil(8)).map_err(|_| TiffError::LimitsExceeded)
     }
 
     pub(crate) fn set_row_stride(&mut self, row_stride: usize) -> Result<(), TiffError> {

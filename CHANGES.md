@@ -35,6 +35,12 @@ Bugfixes:
   `read_chunk`/`read_image` attempted a ~4 GB allocation regardless of the
   configured decoder limits. Now rejected with `TiffError::LimitsExceeded`
   before allocating (fuzz farm #7, #8).
+- Row and plane byte lengths computed in `readout_for_size` that do not fit
+  `usize` now report `TiffError::LimitsExceeded` instead of
+  `TiffError::IntSizeError`. All decoder `Limits` are `usize`, so such a length
+  exceeds every configurable limit; the same malformed file now fails with the
+  same error on 32- and 64-bit targets (previously a ~4 GiB declared row gave
+  `LimitsExceeded` on 64-bit but `IntSizeError` on i686/powerpc).
 
 Compatibility:
 - Changed how tiled TIFF files are detected. The presence of a TileWidth OR
