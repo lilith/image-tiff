@@ -89,7 +89,8 @@ fn bench_decode(suite: &mut Suite) {
                 g.throughput(Throughput::Bytes((1920 * 1080 * 3) as u64));
                 g.bench("full", move |b| {
                     b.iter(move || {
-                        let mut d = Decoder::new(Cursor::new(data)).expect("decoder");
+                        let mut d = Decoder::open(Cursor::new(data)).expect("decoder");
+                        d.next_image().expect("first image");
                         d.read_image().expect("decode")
                     })
                 });
@@ -106,7 +107,10 @@ fn bench_decode(suite: &mut Suite) {
         // Some fixtures are deliberately malformed compat cases. Probe once
         // and report loudly rather than panicking mid-run or silently
         // measuring nothing.
-        match Decoder::new(Cursor::new(bytes)).and_then(|mut d| d.read_image()) {
+        match Decoder::open(Cursor::new(bytes)).and_then(|mut d| {
+            d.next_image()?;
+            d.read_image()
+        }) {
             Ok(_) => {}
             Err(e) => {
                 eprintln!("[predictor_share] SKIPPING {path}: does not decode ({e:?})");
@@ -117,7 +121,8 @@ fn bench_decode(suite: &mut Suite) {
         suite.compare(format!("decode/{name}"), |g| {
             g.bench("full", move |b| {
                 b.iter(move || {
-                    let mut d = Decoder::new(Cursor::new(bytes)).expect("decoder");
+                    let mut d = Decoder::open(Cursor::new(bytes)).expect("decoder");
+                    d.next_image().expect("first image");
                     d.read_image().expect("decode")
                 })
             });
