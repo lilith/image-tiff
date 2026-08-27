@@ -23,7 +23,7 @@ use zenbench::prelude::*;
 /// decompression — it is not predictor cost alone, and reading it that way
 /// would overstate the predictor.
 fn encoded_pair(noise_shift: u32) -> (Vec<u8>, Vec<u8>) {
-    use tiff::encoder::{Compression, TiffEncoder, colortype};
+    use tiff::encoder::{colortype, Compression, TiffEncoder};
     use tiff::tags::Predictor;
 
     let (w, h) = (1920u32, 1080u32);
@@ -106,8 +106,7 @@ fn bench_decode(suite: &mut Suite) {
         // Some fixtures are deliberately malformed compat cases. Probe once
         // and report loudly rather than panicking mid-run or silently
         // measuring nothing.
-        match Decoder::new(Cursor::new(bytes)).and_then(|mut d| d.read_image())
-        {
+        match Decoder::new(Cursor::new(bytes)).and_then(|mut d| d.read_image()) {
             Ok(_) => {}
             Err(e) => {
                 eprintln!("[predictor_share] SKIPPING {path}: does not decode ({e:?})");
