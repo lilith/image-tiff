@@ -12,6 +12,15 @@ Additions:
   into `fuzz/regression/` to gate future regressions of fixed bugs.
 
 Changes:
+- The `Fuzz regression` CI job is now a hard gate. It previously ran
+  `cargo test --test fuzz_regression 2>/dev/null || echo "No regression
+  test found…"` inside an `if [ -d fuzz/regression ]` guard, so a real
+  regression, a missing corpus, and a missing harness were all reported
+  as a pass. `tests/fuzz_regression.rs` has existed since 0.12.0, so the
+  fallback was masking genuine failures. The step is now a bare
+  `cargo test --test fuzz_regression`, and the harness asserts at least
+  `MIN_SEEDS` replayable seeds are present so an emptied or renamed
+  `fuzz/regression/` fails loudly instead of passing vacuously.
 - `tests/fuzz_regression.rs` now uses the shared `zen-fuzz-regress`
   test-helper crate (DEDUP-J2). Behaviour is unchanged — same
   `fuzz/regression/` seeds, same two targets (`decode_comprehensive`,
