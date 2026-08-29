@@ -1,6 +1,23 @@
 # Version 0.12.0 (unreleased)
 
 Additions:
+- Dependency requirements refreshed and written out in full rather than
+  truncated: `criterion` 0.3.1 → 0.8.2 (the real bump — the lock was pinned at
+  0.3.6 by the `0.3.1` requirement), `half` 2.4.1 → 2.7.1, `flate2` 1.0.20 →
+  1.1.10, `zstd` 0.13 → 0.13.3, `zune-jpeg` 0.5.1 → 0.5.15, `crc32fast` 1.5 →
+  1.5.1, `libtest-mimic` 0.8.1 → 0.8.2, `walkdir` 2.5 → 2.5.0. Moving criterion
+  off 0.3 also drops the duplicate `half` 1.8.3 and the old `clap` 2 / `atty` /
+  `serde_cbor` / `csv` bench tree entirely (18 lockfile packages changed).
+  The benches were migrated off the now-deprecated `criterion::black_box` to
+  `std::hint::black_box`, so they build warning-free.
+  **No decode-path dependency moved**: a package-by-package lock diff shows
+  `flate2`, `zstd`, `weezl`, `zune-jpeg`, `image-webp`, `fax` and `half` 2.x all
+  unchanged, so no decoded pixels can differ; the golden-decode suites
+  (`decode_libtiffpic` and friends) stay green at 248 passed / 0 failed.
+  Because these are declared floors and CI's 1.88.0 job builds with
+  `-Zminimal-versions`, the raise was verified against that exact gate:
+  regenerating a minimal-versions lockfile and running `cargo +1.88 build`
+  succeeds with the new floors.
 - Refreshed the tracked `apidoc/Cargo.lock` under a third-party-only
   constraint (14 packages — `rustdoc-types` 0.57.3 → 0.57.4, `serde` 1.0.229,
   `syn` 3.0.4, `thiserror` 2.0.20, `libc` 0.2.189). The root `Cargo.lock` is
