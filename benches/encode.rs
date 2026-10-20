@@ -5,7 +5,7 @@ use criterion::{Criterion, Throughput};
 use std::hint::black_box;
 use std::io::Cursor;
 use tiff::encoder::colortype::RGB32Float;
-use tiff::encoder::{Compression, Predictor, TiffEncoder};
+use tiff::encoder::{Compression, DeflateLevel, Predictor, TiffEncoder};
 
 const WIDTH: u32 = 500;
 const HEIGHT: u32 = 500;
@@ -15,7 +15,7 @@ fn encode_image_f32_float_predictor_deflate(data: &[f32]) {
     TiffEncoder::new(&mut buf)
         .unwrap()
         .with_predictor(Predictor::FloatingPoint)
-        .with_compression(Compression::Deflate(1))
+        .with_compression(Compression::Deflate(DeflateLevel::Fast))
         .write_image::<RGB32Float>(WIDTH, HEIGHT, black_box(data))
         .unwrap();
 }

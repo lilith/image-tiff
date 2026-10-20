@@ -6,7 +6,7 @@ use std::hint::black_box;
 use std::io::Cursor;
 use tiff::decoder::Decoder;
 use tiff::encoder::colortype::{Gray16, Gray8, RGB32Float, RGB16, RGB8, RGBA8};
-use tiff::encoder::{Compression, Predictor, TiffEncoder};
+use tiff::encoder::{Compression, DeflateLevel, Predictor, TiffEncoder};
 
 const WIDTH: u32 = 2048;
 const HEIGHT: u32 = 2048;
@@ -353,7 +353,7 @@ fn main() {
             &rgb8,
             WIDTH,
             HEIGHT,
-            Compression::Deflate(1),
+            Compression::Deflate(DeflateLevel::Fast),
             Predictor::None,
         );
         group
@@ -364,7 +364,7 @@ fn main() {
             &rgb8,
             WIDTH,
             HEIGHT,
-            Compression::Deflate(1),
+            Compression::Deflate(DeflateLevel::Fast),
             Predictor::Horizontal,
         );
         group
@@ -375,7 +375,7 @@ fn main() {
             &rgb16,
             WIDTH,
             HEIGHT,
-            Compression::Deflate(1),
+            Compression::Deflate(DeflateLevel::Fast),
             Predictor::None,
         );
         group
@@ -386,7 +386,7 @@ fn main() {
             &rgb16,
             WIDTH,
             HEIGHT,
-            Compression::Deflate(1),
+            Compression::Deflate(DeflateLevel::Fast),
             Predictor::Horizontal,
         );
         group
@@ -397,7 +397,7 @@ fn main() {
             &rgb_f32,
             WIDTH,
             HEIGHT,
-            Compression::Deflate(1),
+            Compression::Deflate(DeflateLevel::Fast),
             Predictor::None,
         );
         group
@@ -408,7 +408,7 @@ fn main() {
             &rgb_f32,
             WIDTH,
             HEIGHT,
-            Compression::Deflate(1),
+            Compression::Deflate(DeflateLevel::Fast),
             Predictor::FloatingPoint,
         );
         group
@@ -429,7 +429,7 @@ fn main() {
             &rgb8,
             WIDTH,
             HEIGHT,
-            Compression::Deflate(1),
+            Compression::Deflate(DeflateLevel::Fast),
             Predictor::Horizontal,
         );
         group

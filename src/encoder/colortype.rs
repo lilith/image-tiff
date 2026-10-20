@@ -137,7 +137,15 @@ pub trait ColorType {
 
     /// Apply floating-point predictor encoding to a row of samples.
     /// This is only implemented for floating-point types; integer types will panic.
-    fn floating_point_predict(row: &[Self::Inner], result: &mut Vec<u8>);
+    ///
+    /// Fork note: the default body keeps implementors written against tiff
+    /// 0.11.3 (which had no floating-point predictor) compiling. The encoder
+    /// rejects `Predictor::FloatingPoint` for non-IEEEFP sample formats before
+    /// this is called, so the default is reached only by a custom float
+    /// colortype that opts into the predictor without implementing it.
+    fn floating_point_predict(_row: &[Self::Inner], _result: &mut Vec<u8>) {
+        unreachable!("floating-point predictor is not implemented for this colortype")
+    }
 }
 
 pub struct Gray8;

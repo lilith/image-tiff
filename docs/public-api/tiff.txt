@@ -6,29 +6,29 @@
 # impls omitted; re-export duplicates annotated `[also: path]`.
 # DO NOT EDIT BY HAND — commit regenerated changes with the code.
 #
-# files: tiff.txt 706 lines (supported surface) | tiff.features.txt 0 added (features: deflate,fax,jpeg,lzw,webp,zstd,zstd-safe-rust) | tiff.internal.txt 55 lines (55 hidden + 0 excluded-feature)
+# files: tiff.txt 712 lines (supported surface) | tiff.features.txt 0 added (features: deflate,fax,jpeg,lzw,webp,zstd,zstd-safe-rust) | tiff.internal.txt 57 lines (57 hidden + 0 excluded-feature)
 
 ## summary
 #
 #   pub modules                                 7
-#   pub types (struct/enum/trait/alias)        90
+#   pub types (struct/enum/trait/alias)        92
 #   pub consts/statics                         31
 #   free functions                              4
 #   inherent methods                          179
 #   struct fields                              29
-#   enum variants                             247
-#   trait roster entries (type × trait)       264
+#   enum variants                             250
+#   trait roster entries (type × trait)       272
 #   conditional trait impls (verbatim)          7
-#   auto-trait-complete types                  69
+#   auto-trait-complete types                  70
 #   auto-trait exceptions                       9
 #
 # per-module pub lines:
 #   (root)                          123
 #   decoder                         194
-#   encoder                         123
+#   encoder                         128
 #   tags                            147
 
-## items (587 lines)
+## items (592 lines)
 
 pub mod tiff
 pub mod decoder
@@ -271,8 +271,12 @@ pub encoder::compression::Compressor::Deflate(encoder::compression::Deflate)
 pub encoder::compression::Compressor::Lzw(encoder::compression::Lzw)
 pub encoder::compression::Compressor::Packbits(encoder::compression::Packbits)
 pub encoder::compression::Compressor::Uncompressed(encoder::compression::Uncompressed)
+#[non_exhaustive] pub enum encoder::compression::DeflateLevel
+pub encoder::compression::DeflateLevel::Balanced = 6
+pub encoder::compression::DeflateLevel::Best = 9
+pub encoder::compression::DeflateLevel::Fast = 1
 pub struct encoder::compression::Deflate
-pub fn encoder::compression::Deflate::with_level(u8) -> Self
+pub fn encoder::compression::Deflate::with_level(encoder::compression::DeflateLevel) -> Self
 pub struct encoder::compression::Lzw
 pub struct encoder::compression::Packbits
 pub struct encoder::compression::Uncompressed
@@ -281,8 +285,8 @@ pub const encoder::compression::Compression::COMPRESSION_METHOD: tags::Compressi
 pub fn encoder::compression::Compression::get_algorithm(&self) -> encoder::compression::Compressor
 pub trait encoder::compression::CompressionAlgorithm
 pub fn encoder::compression::CompressionAlgorithm::write_to<W: core::io::write::Write>(&mut self, &mut W, &[u8]) -> core::result::Result<u64, core::io::error::Error>
-#[non_exhaustive] pub enum encoder::Compression
-pub encoder::Compression::Deflate(u8)
+pub enum encoder::Compression
+pub encoder::Compression::Deflate(encoder::DeflateLevel)
 pub encoder::Compression::Lzw
 pub encoder::Compression::Packbits
 pub encoder::Compression::Uncompressed
@@ -355,6 +359,7 @@ pub fn [T; N]::bytes(&self) -> usize
 pub fn [T; N]::count(&self) -> usize
 pub fn [T; N]::data(&self) -> alloc::borrow::Cow<'_, [u8]>
 pub fn [T; N]::write<W: core::io::write::Write>(&self, &mut encoder::writer::TiffWriter<W>) -> TiffResult<()>
+pub type encoder::DeflateLevel = encoder::compression::DeflateLevel
 pub type encoder::Predictor = tags::Predictor
 pub mod tags
 pub enum tags::ByteOrder
@@ -618,7 +623,7 @@ pub fn Directory::next(&self) -> core::option::Option<tags::IfdPointer>
 pub fn Directory::set_next(&mut self, core::option::Option<tags::IfdPointer>)
 pub type TiffResult<T> = core::result::Result<T, TiffError>
 
-## trait impls (102 types)
+## trait impls (103 types)
 
 &T: encoder::TiffValue
 ColorType: Clone, Copy, Debug, Eq, Hash, PartialEq
@@ -695,6 +700,7 @@ encoder::colortype::RGBA8: encoder::colortype::ColorType
 encoder::colortype::YCbCr8: encoder::colortype::ColorType
 encoder::compression::Compressor: Default, encoder::compression::CompressionAlgorithm
 encoder::compression::Deflate: Clone, Copy, Debug, Default, encoder::compression::Compression, encoder::compression::CompressionAlgorithm
+encoder::compression::DeflateLevel: Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd
 encoder::compression::Lzw: Clone, Copy, Debug, Default, Eq, PartialEq, encoder::compression::Compression, encoder::compression::CompressionAlgorithm
 encoder::compression::Packbits: Clone, Copy, Debug, Default, Eq, PartialEq, encoder::compression::Compression, encoder::compression::CompressionAlgorithm
 encoder::compression::Uncompressed: Clone, Copy, Debug, Default, Eq, PartialEq, encoder::compression::Compression, encoder::compression::CompressionAlgorithm
@@ -732,7 +738,7 @@ impl<T, const N: usize> encoder::TiffValue for [T; N] where [T]: encoder::TiffVa
 
 ## auto traits
 
-69 types implement all of: Freeze, RefUnwindSafe, Send, Sync, Unpin, UnwindSafe
+70 types implement all of: Freeze, RefUnwindSafe, Send, Sync, Unpin, UnwindSafe
 TiffError: !RefUnwindSafe !UnwindSafe
 decoder::Decoder<R>: !Freeze !RefUnwindSafe !Send !Sync !Unpin !UnwindSafe
 decoder::DecodingSampleSlice<'a>: !UnwindSafe

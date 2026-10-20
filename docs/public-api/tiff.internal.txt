@@ -10,16 +10,16 @@
 ## summary
 #
 #   pub types (struct/enum/trait/alias)         1
-#   inherent methods                           29
-#   trait roster entries (type × trait)        25
+#   inherent methods                           30
+#   trait roster entries (type × trait)        26
 #
 # per-module pub lines:
 #   (root)                            2
-#   decoder                          19
+#   decoder                          20
 #   encoder                           4
 #   tags                              5
 
-## items (30 lines)
+## items (31 lines)
 
 pub fn ColorType::assert_fields_are_eq(&self)
 pub fn TiffUnsupportedError::assert_fields_are_eq(&self)
@@ -39,6 +39,7 @@ pub fn decoder::Decoder<R>::get_tag_u64(&mut self, tags::Tag) -> TiffResult<u64>
 pub fn decoder::Decoder<R>::get_tag_u64_vec(&mut self, tags::Tag) -> TiffResult<alloc::vec::Vec<u64>>
 pub fn decoder::Decoder<R>::get_tag_u8_vec(&mut self, tags::Tag) -> TiffResult<alloc::vec::Vec<u8>>
 pub fn decoder::Decoder<R>::get_tag_unsigned<T: core::convert::TryFrom<u64>>(&mut self, tags::Tag) -> TiffResult<T>
+pub fn decoder::Decoder<R>::image_ifd(&mut self) -> decoder::IfdDecoder<'_>
 pub fn decoder::Decoder<R>::tag_iter(&mut self) -> impl core::iter::traits::iterator::Iterator<Item = TiffResult<(tags::Tag, decoder::ifd::Value)>> + '_
 pub fn decoder::TiffCodingUnit::assert_fields_are_eq(&self)
 pub fn encoder::DirectoryOffset<K>::assert_fields_are_eq(&self)
@@ -52,7 +53,7 @@ pub fn tags::SampleFormat::assert_fields_are_eq(&self)
 pub fn tags::Tag::assert_fields_are_eq(&self)
 pub type decoder::ifd::Directory = std::collections::hash::map::HashMap<tags::Tag, decoder::ifd::Entry>
 
-## trait impls (25 types)
+## trait impls (26 types)
 
 ColorType: TrivialClone
 decoder::ChunkType: TrivialClone
@@ -64,6 +65,7 @@ encoder::Ifd8: TrivialClone
 encoder::Rational: TrivialClone
 encoder::SRational: TrivialClone
 encoder::compression::Deflate: TrivialClone
+encoder::compression::DeflateLevel: TrivialClone
 encoder::compression::Lzw: TrivialClone
 encoder::compression::Packbits: TrivialClone
 encoder::compression::Uncompressed: TrivialClone

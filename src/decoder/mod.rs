@@ -1985,6 +1985,12 @@ impl<R: Read + Seek> Decoder<R> {
 #[doc(hidden)]
 #[allow(deprecated)]
 impl<R: Read + Seek> Decoder<R> {
+    /// Get the IFD decoder for our current image IFD.
+    #[deprecated = "Replace with `self.current_ifd()`"]
+    pub fn image_ifd(&mut self) -> IfdDecoder<'_> {
+        self.current_ifd()
+    }
+
     /// Tries to retrieve a tag from the current image directory.
     /// Return `Ok(None)` if the tag is not present.
     #[deprecated = "Replace with `self.current_ifd().find_tag`"]

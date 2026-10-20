@@ -23,7 +23,7 @@ use zenbench::prelude::*;
 /// decompression — it is not predictor cost alone, and reading it that way
 /// would overstate the predictor.
 fn encoded_pair(noise_shift: u32) -> (Vec<u8>, Vec<u8>) {
-    use tiff::encoder::{colortype, Compression, TiffEncoder};
+    use tiff::encoder::{colortype, Compression, DeflateLevel, TiffEncoder};
     use tiff::tags::Predictor;
 
     let (w, h) = (1920u32, 1080u32);
@@ -49,7 +49,7 @@ fn encoded_pair(noise_shift: u32) -> (Vec<u8>, Vec<u8>) {
         {
             let enc = TiffEncoder::new(&mut buf)
                 .expect("encoder")
-                .with_compression(Compression::Deflate(6))
+                .with_compression(Compression::Deflate(DeflateLevel::Balanced))
                 .with_predictor(pred);
             let mut enc = enc;
             enc.write_image::<colortype::RGB8>(w, h, &px)

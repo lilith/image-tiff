@@ -8,6 +8,11 @@ Fork sync (2026-10-20):
   extended-depth samples was replaced by upstream's mask (mod 2^n), the form
   that upstream merged from our PR #399. Pins written out in full: `zstd`
   0.14.3, `zrip-decode` 0.8.11.
+- The fork keeps the crates.io 0.11.3 API on main, because zenextras patches
+  0.11.3 with it: `DeflateLevel` and `Compression::Deflate(DeflateLevel)` stay
+  (upstream main takes a `u8`), `encoder::Compression` stays exhaustive,
+  `Decoder::image_ifd` stays as a deprecated alias of `current_ifd`, and
+  `ColorType::floating_point_predict` has a default body.
 
 Fixes:
 - Decoding a tiled image whose width is not a multiple of the tile width no
