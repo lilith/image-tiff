@@ -6,29 +6,29 @@
 # impls omitted; re-export duplicates annotated `[also: path]`.
 # DO NOT EDIT BY HAND — commit regenerated changes with the code.
 #
-# files: tiff.txt 703 lines (supported surface) | tiff.features.txt 0 added (features: deflate,fax,jpeg,lzw,webp,zstd) | tiff.internal.txt 66 lines (66 hidden + 0 excluded-feature)
+# files: tiff.txt 706 lines (supported surface) | tiff.features.txt 0 added (features: deflate,fax,jpeg,lzw,webp,zstd,zstd-safe-rust) | tiff.internal.txt 55 lines (55 hidden + 0 excluded-feature)
 
 ## summary
 #
 #   pub modules                                 7
 #   pub types (struct/enum/trait/alias)        90
-#   pub consts/statics                         30
+#   pub consts/statics                         31
 #   free functions                              4
-#   inherent methods                          178
+#   inherent methods                          179
 #   struct fields                              29
-#   enum variants                             246
+#   enum variants                             247
 #   trait roster entries (type × trait)       264
 #   conditional trait impls (verbatim)          7
 #   auto-trait-complete types                  69
 #   auto-trait exceptions                       9
 #
 # per-module pub lines:
-#   (root)                          122
-#   decoder                         193
+#   (root)                          123
+#   decoder                         194
 #   encoder                         123
-#   tags                            146
+#   tags                            147
 
-## items (584 lines)
+## items (587 lines)
 
 pub mod tiff
 pub mod decoder
@@ -149,7 +149,8 @@ pub fn decoder::Decoder<R>::read_directory_tags<'ifd>(&'ifd mut self, &'ifd Dire
 pub fn decoder::Decoder<R>::read_tag(&mut self, tags::Tag) -> TiffResult<core::option::Option<decoder::EntryBytesReader<'_, R>>>
 pub fn decoder::Decoder<R>::seek_to_directory(&mut self, usize) -> TiffResult<()>
 pub fn decoder::Decoder<R>::seek_to_image(&mut self, usize) -> TiffResult<()>
-pub fn decoder::Decoder<R>::take_with_reader<S: std::io::Read + std::io::Seek>(&mut self, S) -> decoder::Decoder<S>
+pub fn decoder::Decoder<R>::take_with_reader<S: alloc::io::read::Read + core::io::seek::Seek>(&mut self, S) -> decoder::Decoder<S>
+pub fn decoder::Decoder<R>::with_lenient(self, bool) -> decoder::Decoder<R>
 pub fn decoder::Decoder<R>::with_limits(self, decoder::Limits) -> decoder::Decoder<R>
 pub fn decoder::Decoder<R>::chunk_data_dimensions(&self, u32) -> (u32, u32)
 pub fn decoder::Decoder<R>::chunk_dimensions(&self) -> (u32, u32)
@@ -170,22 +171,22 @@ pub fn decoder::Decoder<R>::read_image_bytes(&mut self, &mut [u8]) -> TiffResult
 pub fn decoder::Decoder<R>::read_image_to_buffer(&mut self, &mut decoder::DecodingSampleBuffer) -> TiffResult<decoder::BufferLayoutPreference>
 pub fn decoder::Decoder<R>::strip_count(&mut self) -> TiffResult<u32>
 pub fn decoder::Decoder<R>::tile_count(&mut self) -> TiffResult<u32>
-pub fn decoder::Decoder<R>::goto_offset(&mut self, u32) -> std::io::error::Result<()> where R: std::io::Seek
-pub fn decoder::Decoder<R>::goto_offset_u64(&mut self, u64) -> std::io::error::Result<()> where R: std::io::Seek
+pub fn decoder::Decoder<R>::goto_offset(&mut self, u32) -> core::io::error::Result<()> where R: core::io::seek::Seek
+pub fn decoder::Decoder<R>::goto_offset_u64(&mut self, u64) -> core::io::error::Result<()> where R: core::io::seek::Seek
 pub fn decoder::Decoder<R>::inner(&mut self) -> &mut R
-pub fn decoder::Decoder<R>::read_byte(&mut self) -> core::result::Result<u8, std::io::error::Error>
-pub fn decoder::Decoder<R>::read_double(&mut self) -> core::result::Result<f64, std::io::error::Error>
-pub fn decoder::Decoder<R>::read_entry(&mut self, decoder::ifd::Entry) -> TiffResult<decoder::EntryBytesReader<'_, R>> where R: std::io::Seek
-pub fn decoder::Decoder<R>::read_float(&mut self) -> core::result::Result<f32, std::io::error::Error>
-pub fn decoder::Decoder<R>::read_ifd_offset(&mut self) -> core::result::Result<u64, std::io::error::Error>
-pub fn decoder::Decoder<R>::read_long(&mut self) -> core::result::Result<u32, std::io::error::Error>
-pub fn decoder::Decoder<R>::read_long8(&mut self) -> core::result::Result<u64, std::io::error::Error>
+pub fn decoder::Decoder<R>::read_byte(&mut self) -> core::result::Result<u8, core::io::error::Error>
+pub fn decoder::Decoder<R>::read_double(&mut self) -> core::result::Result<f64, core::io::error::Error>
+pub fn decoder::Decoder<R>::read_entry(&mut self, decoder::ifd::Entry) -> TiffResult<decoder::EntryBytesReader<'_, R>> where R: core::io::seek::Seek
+pub fn decoder::Decoder<R>::read_float(&mut self) -> core::result::Result<f32, core::io::error::Error>
+pub fn decoder::Decoder<R>::read_ifd_offset(&mut self) -> core::result::Result<u64, core::io::error::Error>
+pub fn decoder::Decoder<R>::read_long(&mut self) -> core::result::Result<u32, core::io::error::Error>
+pub fn decoder::Decoder<R>::read_long8(&mut self) -> core::result::Result<u64, core::io::error::Error>
 pub fn decoder::Decoder<R>::read_offset(&mut self) -> TiffResult<[u8; 4]>
-pub fn decoder::Decoder<R>::read_offset_u64(&mut self) -> core::result::Result<[u8; 8], std::io::error::Error>
-pub fn decoder::Decoder<R>::read_short(&mut self) -> core::result::Result<u16, std::io::error::Error>
-pub fn decoder::Decoder<R>::read_slong(&mut self) -> core::result::Result<i32, std::io::error::Error>
-pub fn decoder::Decoder<R>::read_slong8(&mut self) -> core::result::Result<i64, std::io::error::Error>
-pub fn decoder::Decoder<R>::read_sshort(&mut self) -> core::result::Result<i16, std::io::error::Error>
+pub fn decoder::Decoder<R>::read_offset_u64(&mut self) -> core::result::Result<[u8; 8], core::io::error::Error>
+pub fn decoder::Decoder<R>::read_short(&mut self) -> core::result::Result<u16, core::io::error::Error>
+pub fn decoder::Decoder<R>::read_slong(&mut self) -> core::result::Result<i32, core::io::error::Error>
+pub fn decoder::Decoder<R>::read_slong8(&mut self) -> core::result::Result<i64, core::io::error::Error>
+pub fn decoder::Decoder<R>::read_sshort(&mut self) -> core::result::Result<i16, core::io::error::Error>
 pub fn decoder::Decoder<R>::read_string(&mut self, usize) -> TiffResult<alloc::string::String>
 pub fn decoder::Decoder<R>::variant(&self) -> tags::TiffVariant
 pub struct decoder::EntryBytesReader<'lt, R>
@@ -221,8 +222,8 @@ pub struct decoder::TiffHeader
 pub decoder::TiffHeader::byte_order: tags::ByteOrder
 pub decoder::TiffHeader::first_ifd: tags::IfdPointer
 pub decoder::TiffHeader::variant: tags::TiffVariant
-pub fn decoder::TiffHeader::open<R: std::io::Read + std::io::Seek>(&self, R) -> decoder::Decoder<R>
-pub fn decoder::TiffHeader::parse<R: std::io::Read + std::io::Seek>(R) -> TiffResult<Self>
+pub fn decoder::TiffHeader::open<R: alloc::io::read::Read + core::io::seek::Seek>(&self, R) -> decoder::Decoder<R>
+pub fn decoder::TiffHeader::parse<R: alloc::io::read::Read + core::io::seek::Seek>(R) -> TiffResult<Self>
 pub type decoder::DecodingBuffer<'a> = decoder::DecodingSampleSlice<'a>
 pub type decoder::DecodingResult = decoder::DecodingSampleBuffer
 pub mod encoder
@@ -279,13 +280,13 @@ pub trait encoder::compression::Compression: encoder::compression::CompressionAl
 pub const encoder::compression::Compression::COMPRESSION_METHOD: tags::CompressionMethod
 pub fn encoder::compression::Compression::get_algorithm(&self) -> encoder::compression::Compressor
 pub trait encoder::compression::CompressionAlgorithm
-pub fn encoder::compression::CompressionAlgorithm::write_to<W: std::io::Write>(&mut self, &mut W, &[u8]) -> core::result::Result<u64, std::io::error::Error>
+pub fn encoder::compression::CompressionAlgorithm::write_to<W: core::io::write::Write>(&mut self, &mut W, &[u8]) -> core::result::Result<u64, core::io::error::Error>
 #[non_exhaustive] pub enum encoder::Compression
 pub encoder::Compression::Deflate(u8)
 pub encoder::Compression::Lzw
 pub encoder::Compression::Packbits
 pub encoder::Compression::Uncompressed
-pub struct encoder::DirectoryEncoder<'a, W: 'a + std::io::Write + std::io::Seek, K: encoder::TiffKind>
+pub struct encoder::DirectoryEncoder<'a, W: 'a + core::io::write::Write + core::io::seek::Seek, K: encoder::TiffKind>
 pub fn encoder::DirectoryEncoder<'a, W, K>::extend_from(&mut self, &Directory)
 pub fn encoder::DirectoryEncoder<'a, W, K>::finish(self) -> TiffResult<()>
 pub fn encoder::DirectoryEncoder<'a, W, K>::finish_with_offsets(self) -> TiffResult<encoder::DirectoryOffset<K>>
@@ -303,7 +304,7 @@ pub encoder::DirectoryOffset::pointer: tags::IfdPointer
 pub fn encoder::DirectoryOffset<K>::new(tags::IfdPointer, &Directory) -> TiffResult<Self>
 pub struct encoder::Ifd(pub u32)
 pub struct encoder::Ifd8(pub u64)
-pub struct encoder::ImageEncoder<'a, W: 'a + std::io::Write + std::io::Seek, C: encoder::colortype::ColorType, K: encoder::TiffKind>
+pub struct encoder::ImageEncoder<'a, W: 'a + core::io::write::Write + core::io::seek::Seek, C: encoder::colortype::ColorType, K: encoder::TiffKind>
 pub fn encoder::ImageEncoder<'a, W, T, K>::encoder(&mut self) -> &mut encoder::DirectoryEncoder<'a, W, K>
 pub fn encoder::ImageEncoder<'a, W, T, K>::extra_samples(&mut self, &[tags::ExtraSamples]) -> core::result::Result<(), TiffError>
 pub fn encoder::ImageEncoder<'a, W, T, K>::finish(self) -> TiffResult<()>
@@ -338,22 +339,22 @@ pub type encoder::TiffKind::OffsetArrayType: ?core::marker::Sized + encoder::Tif
 pub type encoder::TiffKind::OffsetType: core::convert::TryFrom<usize, Error = core::num::error::TryFromIntError> + core::convert::Into<u64> + encoder::TiffValue
 pub fn encoder::TiffKind::convert_offset(u64) -> TiffResult<Self::OffsetType>
 pub fn encoder::TiffKind::convert_slice(&[Self::OffsetType]) -> &Self::OffsetArrayType
-pub fn encoder::TiffKind::write_entry_count<W: std::io::Write>(&mut encoder::writer::TiffWriter<W>, usize) -> TiffResult<()>
-pub fn encoder::TiffKind::write_header<W: std::io::Write>(&mut encoder::writer::TiffWriter<W>) -> TiffResult<()>
-pub fn encoder::TiffKind::write_offset<W: std::io::Write>(&mut encoder::writer::TiffWriter<W>, u64) -> TiffResult<()>
+pub fn encoder::TiffKind::write_entry_count<W: core::io::write::Write>(&mut encoder::writer::TiffWriter<W>, usize) -> TiffResult<()>
+pub fn encoder::TiffKind::write_header<W: core::io::write::Write>(&mut encoder::writer::TiffWriter<W>) -> TiffResult<()>
+pub fn encoder::TiffKind::write_offset<W: core::io::write::Write>(&mut encoder::writer::TiffWriter<W>, u64) -> TiffResult<()>
 pub trait encoder::TiffValue
 pub const encoder::TiffValue::BYTE_LEN: u8
 pub const encoder::TiffValue::FIELD_TYPE: tags::Type
 pub fn encoder::TiffValue::bytes(&self) -> usize
 pub fn encoder::TiffValue::count(&self) -> usize
 pub fn encoder::TiffValue::data(&self) -> alloc::borrow::Cow<'_, [u8]>
-pub fn encoder::TiffValue::write<W: std::io::Write>(&self, &mut encoder::writer::TiffWriter<W>) -> TiffResult<()>
+pub fn encoder::TiffValue::write<W: core::io::write::Write>(&self, &mut encoder::writer::TiffWriter<W>) -> TiffResult<()>
 pub const [T; N]::BYTE_LEN: u8
 pub const [T; N]::FIELD_TYPE: tags::Type
 pub fn [T; N]::bytes(&self) -> usize
 pub fn [T; N]::count(&self) -> usize
 pub fn [T; N]::data(&self) -> alloc::borrow::Cow<'_, [u8]>
-pub fn [T; N]::write<W: std::io::Write>(&self, &mut encoder::writer::TiffWriter<W>) -> TiffResult<()>
+pub fn [T; N]::write<W: core::io::write::Write>(&self, &mut encoder::writer::TiffWriter<W>) -> TiffResult<()>
 pub type encoder::Predictor = tags::Predictor
 pub mod tags
 pub enum tags::ByteOrder
@@ -397,9 +398,11 @@ pub tags::PhotometricInterpretation::ItuLab = 10
 pub tags::PhotometricInterpretation::RGB = 2
 pub tags::PhotometricInterpretation::RGBPalette = 3
 pub tags::PhotometricInterpretation::TransparencyMask = 4
+pub tags::PhotometricInterpretation::Unknown(u16)
 pub tags::PhotometricInterpretation::WhiteIsZero = 0
 pub tags::PhotometricInterpretation::YCbCr = 6
 pub const fn tags::PhotometricInterpretation::from_u16(u16) -> core::option::Option<Self>
+pub const fn tags::PhotometricInterpretation::from_u16_exhaustive(u16) -> Self
 pub const fn tags::PhotometricInterpretation::to_u16(&self) -> u16
 #[non_exhaustive] #[repr(u16)] pub enum tags::PlanarConfiguration
 pub tags::PlanarConfiguration::Chunky = 1
@@ -542,7 +545,7 @@ pub fn ColorType::num_samples(&self) -> u16
 pub enum TiffError
 pub TiffError::FormatError(TiffFormatError)
 pub TiffError::IntSizeError
-pub TiffError::IoError(std::io::error::Error)
+pub TiffError::IoError(core::io::error::Error)
 pub TiffError::LimitsExceeded
 pub TiffError::UnsupportedError(TiffUnsupportedError)
 pub TiffError::UsageError(UsageError)
@@ -620,7 +623,7 @@ pub type TiffResult<T> = core::result::Result<T, TiffError>
 &T: encoder::TiffValue
 ColorType: Clone, Copy, Debug, Eq, Hash, PartialEq
 Directory: Clone, Debug, FromIterator<(tags::Tag, decoder::ifd::Entry)>
-TiffError: Debug, Display, Error, From<TiffFormatError>, From<TiffUnsupportedError>, From<UsageError>, From<alloc::string::FromUtf8Error>, From<core::num::error::TryFromIntError>, From<core::str::error::Utf8Error>, From<std::io::error::Error>, From<weezl::error::LzwError>, From<zune_jpeg::errors::DecodeErrors>
+TiffError: Debug, Display, Error, From<TiffFormatError>, From<TiffUnsupportedError>, From<UsageError>, From<alloc::string::FromUtf8Error>, From<core::io::error::Error>, From<core::num::error::TryFromIntError>, From<core::str::error::Utf8Error>, From<weezl::error::LzwError>, From<zune_jpeg::errors::DecodeErrors>
 TiffFormatError: Clone, Debug, Display, Error, PartialEq
 TiffUnsupportedError: Clone, Debug, Display, Eq, Error, Hash, PartialEq
 UsageError: Debug, Display, Error
@@ -733,9 +736,9 @@ impl<T, const N: usize> encoder::TiffValue for [T; N] where [T]: encoder::TiffVa
 TiffError: !RefUnwindSafe !UnwindSafe
 decoder::Decoder<R>: !Freeze !RefUnwindSafe !Send !Sync !Unpin !UnwindSafe
 decoder::DecodingSampleSlice<'a>: !UnwindSafe
-decoder::EntryBytesReader<'lt, R>: !RefUnwindSafe !Send !Sync !UnwindSafe
+decoder::EntryBytesReader<'lt, R>: !Freeze !RefUnwindSafe !Send !Sync !Unpin !UnwindSafe
 decoder::IfdDecoder<'lt>: !RefUnwindSafe !Send !Sync !UnwindSafe
-encoder::DirectoryEncoder<'a, W, K>: !RefUnwindSafe !Send !Sync !Unpin !UnwindSafe
+encoder::DirectoryEncoder<'a, W, K>: !Freeze !RefUnwindSafe !Send !Sync !Unpin !UnwindSafe
 encoder::DirectoryOffset<K>: !Freeze !RefUnwindSafe !Send !Sync !Unpin !UnwindSafe
-encoder::ImageEncoder<'a, W, C, K>: !RefUnwindSafe !Send !Sync !Unpin !UnwindSafe
+encoder::ImageEncoder<'a, W, C, K>: !Freeze !RefUnwindSafe !Send !Sync !Unpin !UnwindSafe
 encoder::TiffEncoder<W, K>: !Freeze !RefUnwindSafe !Send !Sync !Unpin !UnwindSafe

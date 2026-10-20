@@ -1,5 +1,21 @@
 # Version 0.12.0 (unreleased)
 
+Fork sync (2026-10-20):
+- Merged 31 upstream image-rs/image-tiff commits (through PR #415): lenient
+  decoding (`Decoder::with_lenient`), 16-bit CIELab, old-style (pre-6.0) LZW,
+  the `zstd-safe-rust` feature (pure-Rust zstd through `zrip-decode`), zstd
+  0.14, and the clipped tiled-border fix. The fork's own clamp of
+  extended-depth samples was replaced by upstream's mask (mod 2^n), the form
+  that upstream merged from our PR #399. Pins written out in full: `zstd`
+  0.14.3, `zrip-decode` 0.8.11.
+
+Fixes:
+- Decoding a tiled image whose width is not a multiple of the tile width no
+  longer corrupts the columns below the right border tiles when extra samples
+  are discarded (e.g. RGB with an unspecified extra sample). The horizontal
+  tile padding was written past the end of the output row, spilling into the
+  leftmost columns of the following row.
+
 Additions:
 - Dependency requirements refreshed and written out in full rather than
   truncated: `criterion` 0.3.1 → 0.8.2 (the real bump — the lock was pinned at

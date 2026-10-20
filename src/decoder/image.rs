@@ -97,6 +97,7 @@ pub(crate) struct Image {
     /// run on samples directly and thus skip the outer byte order entirely, except potentially
     /// they have interior byte order treatment.
     pub decompression_to_host_endian: bool,
+    pub lenient: bool,
 }
 
 /// Describes how to read a tile-aligned portion of the image.
@@ -158,6 +159,7 @@ impl Image {
     pub fn from_reader<R: Read + Seek>(
         decoder: &mut ValueReader<R>,
         ifd: &Directory,
+        lenient: bool,
     ) -> TiffResult<Image> {
         let mut tag_reader = TagReader { decoder, ifd };
 
@@ -500,6 +502,7 @@ impl Image {
                 compression_method,
                 CompressionMethod::SgiLog | CompressionMethod::SgiLog24
             ),
+            lenient,
         })
     }
 
@@ -515,10 +518,13 @@ impl Image {
     }
 
     pub(crate) fn colortype(&self) -> TiffResult<ColorType> {
-        let is_alpha_extra_samples = matches!(
-            self.extra_samples.as_slice(),
-            [ExtraSamples::AssociatedAlpha, ..] | [ExtraSamples::UnassociatedAlpha, ..]
-        );
+        let is_alpha_extra_samples = match self.extra_samples.as_slice().first() {
+            Some(ExtraSamples::AssociatedAlpha) | Some(ExtraSamples::UnassociatedAlpha) => true,
+            // In lenient mode, keep unspecified alpha interpretation logic compatible with libtiff
+            // See Issue #341
+            Some(ExtraSamples::Unspecified) if self.lenient && self.samples > 3 => true,
+            _ => false,
+        };
 
         match self.photometric_interpretation {
             PhotometricInterpretation::RGB => match self.photometric_samples {
@@ -591,20 +597,30 @@ impl Image {
                     ),
                 )),
             },
-            // Unsupported due to inherently heterogeneous sample types. This is represented as:
-            // ```
-            // struct TiffLab /* Interpretation 8* {
-            //     pub L: u8, // SampleFormat::Uint
-            //     pub a: i8, // SampleFormat::Int
-            //     pub b: i8, // SampleFormat::Int
-            // }
-            // ```
-            PhotometricInterpretation::CIELab => Err(TiffError::UnsupportedError(
-                TiffUnsupportedError::InterpretationWithBits(
-                    PhotometricInterpretation::CIELab,
-                    vec![self.bits_per_sample; self.samples as usize],
-                ),
-            )),
+            // CIE L*a*b* (TIFF6 Section 23, pp 110-115) encodes a/b as signed integers
+            // (int8 at 8-bit, int16 at 16-bit) with 0 neutral, while ICC L*a*b*
+            // (photometric=9) uses unsigned samples with the neutral at the middle of
+            // the range. `SampleFormat` applies uniformly to all samples, so it can't
+            // describe the L=unsigned + a/b=signed mix; instead we take a/b as signed
+            // from the photometric interpretation (requiring `SampleFormat::Uint`, like
+            // the ICCLab arm) and re-bias them to the unsigned ICCLab encoding in
+            // post-processing (see `cielab_to_icclab`). libtiff does the same, decoding
+            // both depths (`putcontig8bitCIELab8` / `putcontig8bitCIELab16`, selected by
+            // `initCIELabConversion` in tif_getimage.c line 2216
+            // @ 04884181e8903915038be553bfab404302d98ea0).
+            PhotometricInterpretation::CIELab => match self.photometric_samples {
+                3 if matches!(self.bits_per_sample, 8 | 16)
+                    && matches!(self.sample_format, SampleFormat::Uint) =>
+                {
+                    Ok(ColorType::Lab(self.bits_per_sample))
+                }
+                _ => Err(TiffError::UnsupportedError(
+                    TiffUnsupportedError::InterpretationWithBits(
+                        PhotometricInterpretation::CIELab,
+                        vec![self.bits_per_sample; self.samples as usize],
+                    ),
+                )),
+            },
             PhotometricInterpretation::CIELogL => match self.samples {
                 1 if matches!(self.bits_per_sample, 32)
                     && matches!(self.sample_format, SampleFormat::IEEEFP) =>
@@ -660,14 +676,16 @@ impl Image {
                 ),
             )),
             PhotometricInterpretation::RGBPalette => Ok(ColorType::Palette(self.bits_per_sample)),
-            PhotometricInterpretation::TransparencyMask | PhotometricInterpretation::Unknown(_) => {
-                Err(TiffError::UnsupportedError(
-                    TiffUnsupportedError::InterpretationWithBits(
-                        self.photometric_interpretation,
-                        vec![self.bits_per_sample; self.samples as usize],
-                    ),
-                ))
+            // TransparencyMask is a single-channel mask, treat as grayscale.
+            PhotometricInterpretation::TransparencyMask => {
+                Ok(ColorType::Gray(self.bits_per_sample))
             }
+            PhotometricInterpretation::Unknown(_) => Err(TiffError::UnsupportedError(
+                TiffUnsupportedError::InterpretationWithBits(
+                    self.photometric_interpretation,
+                    vec![self.bits_per_sample; self.samples as usize],
+                ),
+            )),
         }
     }
 
@@ -720,6 +738,8 @@ impl Image {
             )),
             #[cfg(feature = "zstd")]
             CompressionMethod::ZSTD => Box::new(zstd::Decoder::new(reader)?),
+            #[cfg(all(not(feature = "zstd"), feature = "zstd-safe-rust"))]
+            CompressionMethod::ZSTD => Box::new(zrip_decode::streaming::FrameDecoder::new(reader)),
             CompressionMethod::PackBits => Box::new(PackBitsReader::new(reader, compressed_length)),
             #[cfg(feature = "deflate")]
             CompressionMethod::Deflate | CompressionMethod::OldDeflate => {
@@ -1081,6 +1101,7 @@ impl Image {
             | ColorType::YCbCr(n)
             | ColorType::Gray(n)
             | ColorType::Palette(n)
+            | ColorType::Lab(n)
             | ColorType::Multiband {
                 bit_depth: n,
                 num_samples: _,
@@ -1092,6 +1113,7 @@ impl Image {
             | ColorType::YCbCr(n)
             | ColorType::Gray(n)
             | ColorType::Palette(n)
+            | ColorType::Lab(n)
             | ColorType::Multiband {
                 bit_depth: n,
                 num_samples: _,
@@ -1251,21 +1273,26 @@ impl Image {
                 super::fix_endianness_and_predict(
                     out_row,
                     color_type.bit_depth(),
-                    samples,
+                    data_samples,
                     ByteOrder::native(),
                     predictor,
                     scratch,
                 );
 
-                // A promoted extended-depth sample can carry bits above the
-                // declared depth after the predictor (reconstructed in the u16/u32
-                // storage width). Clamp to the declared max so *both* the inverted
-                // and non-inverted paths see in-range values.
-                super::clamp_samples_to_bit_depth(out_row, tiff_bps, out_bps, self.sample_format);
+                // An n-bit predictor delta is stored modulo 2^n, but the
+                // reconstruction above accumulated it in the promoted u16/u32
+                // storage width. Reduce back modulo the declared depth so both
+                // the inverted and non-inverted paths see exact, in-range
+                // values (2^n divides the storage modulus, so one mask after
+                // the row is exact).
+                super::mask_samples_to_bit_depth(out_row, tiff_bps, out_bps, self.sample_format);
 
-                if photometric_interpretation == PhotometricInterpretation::WhiteIsZero {
-                    super::invert_colors(out_row, color_type, self.sample_format)?;
-                }
+                super::post_process_row(
+                    out_row,
+                    photometric_interpretation,
+                    color_type,
+                    self.sample_format,
+                )?;
             }
         } else if is_output_chunk_rows && is_all_bits {
             // Here we can read directly into the output buffer itself.
@@ -1283,9 +1310,22 @@ impl Image {
                 );
             }
 
-            if photometric_interpretation == PhotometricInterpretation::WhiteIsZero {
-                super::invert_colors(tile, color_type, self.sample_format)?;
-            }
+            // No-op in this branch: promoted layouts (declared depth < storage
+            // width) are handled exclusively by the unpacking branch above.
+            // Called in every integer branch so they cannot diverge.
+            super::mask_samples_to_bit_depth(
+                tile,
+                layout.tiff_bits_per_sample,
+                layout.output_bits_per_sample,
+                self.sample_format,
+            );
+
+            super::post_process_row(
+                tile,
+                photometric_interpretation,
+                color_type,
+                self.sample_format,
+            )?;
         } else if chunk_row_bytes > data_row_bytes && self.predictor == Predictor::FloatingPoint {
             // The floating point predictor shuffles the padding bytes into the encoded output, so
             // this case is handled specially when needed.
@@ -1309,9 +1349,14 @@ impl Image {
                     }
                     _ => unreachable!(),
                 }
-                if photometric_interpretation == PhotometricInterpretation::WhiteIsZero {
-                    super::invert_colors(row, color_type, self.sample_format)?;
-                }
+                // No masking here: the floating point predictor requires
+                // IEEEFP samples, which are never depth-promoted.
+                super::post_process_row(
+                    row,
+                    photometric_interpretation,
+                    color_type,
+                    self.sample_format,
+                )?;
             }
         } else if is_all_bits {
             // We read row-by-row but each row fits in its output buffer.
@@ -1338,9 +1383,22 @@ impl Image {
                     scratch,
                 );
 
-                if photometric_interpretation == PhotometricInterpretation::WhiteIsZero {
-                    super::invert_colors(row, color_type, self.sample_format)?;
-                }
+                // No-op in this branch: promoted layouts only occur in the
+                // unpacking branch. Called so the integer branches cannot
+                // diverge.
+                super::mask_samples_to_bit_depth(
+                    row,
+                    layout.tiff_bits_per_sample,
+                    layout.output_bits_per_sample,
+                    self.sample_format,
+                );
+
+                super::post_process_row(
+                    row,
+                    photometric_interpretation,
+                    color_type,
+                    self.sample_format,
+                )?;
             }
         } else {
             // The encoded data potentially takes up more space than the output data so we must be
@@ -1367,6 +1425,10 @@ impl Image {
             let photo_range = photometric_bit_end / 8..bits_per_pixel / 8;
             let mut encoded = vec![0u8; chunk_row_bytes];
             for row in buf.chunks_mut(layout.row_stride).take(data_dims.1 as usize) {
+                // Clip to the chunk's data width: border chunks are stored at the full chunk
+                // width, and writing their horizontal padding would spill into the following
+                // output row (and predict/invert would run past the chunk's own columns).
+                let row = &mut row[..data_row_bytes];
                 reader.read_exact(&mut encoded)?;
 
                 Self::compact_photometric_bytes(&mut encoded, row, &photo_range);
@@ -1380,9 +1442,22 @@ impl Image {
                     scratch,
                 );
 
-                if photometric_interpretation == PhotometricInterpretation::WhiteIsZero {
-                    super::invert_colors(row, color_type, self.sample_format)?;
-                }
+                // No-op in this branch: promoted layouts only occur in the
+                // unpacking branch. Called so the integer branches cannot
+                // diverge.
+                super::mask_samples_to_bit_depth(
+                    row,
+                    layout.tiff_bits_per_sample,
+                    layout.output_bits_per_sample,
+                    self.sample_format,
+                );
+
+                super::post_process_row(
+                    row,
+                    photometric_interpretation,
+                    color_type,
+                    self.sample_format,
+                )?;
             }
         }
 

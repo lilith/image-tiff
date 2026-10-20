@@ -1,5 +1,5 @@
 # tiff public API — additions from non-default features
-# features: deflate,fax,jpeg,lzw,webp,zstd
+# features: deflate,fax,jpeg,lzw,webp,zstd,zstd-safe-rust
 # (regenerated on every `cargo test` by zenutils-apidoc; ZEN_API_DOC=check verifies, =off skips).
 # Encodings: crate-name prefix stripped; auto traits collapse to a
 # count + exceptions; trait impls collapse to one roster line per
