@@ -977,7 +977,8 @@ fn write_extra_bits_image() {
     use tiff::{encoder, tags::ExtraSamples};
 
     // Encode in memory and compare with the committed fixture. Rewriting the
-    // fixture on disk raced `extra_bits_rgb`, which reads it in parallel.
+    // fixture on disk raced `extra_bits_rgb`, which reads it in parallel. The
+    // encoder writes host byte order, so compare decoded samples, not bytes.
     let mut written = std::io::Cursor::new(Vec::new());
     {
         let mut encoder = encoder::TiffEncoder::new(&mut written).expect("Cannot create encoder");
@@ -992,9 +993,18 @@ fn write_extra_bits_image() {
             .expect("correct amount of data to write");
     }
 
+    let decode = |bytes: Vec<u8>| {
+        let mut decoder = Decoder::open(std::io::Cursor::new(bytes)).expect("open");
+        decoder.next_image().expect("image");
+        let colortype = decoder.colortype().expect("colortype");
+        match decoder.read_image().expect("decode") {
+            tiff::decoder::DecodingSampleBuffer::U8(v) => (colortype, v),
+            _ => panic!("expected 8-bit samples"),
+        }
+    };
     let path = PathBuf::from(TEST_IMAGE_DIR).join("extra_bits_rgb_8b.tiff");
     let fixture = std::fs::read(path).expect("Cannot find test image!");
-    assert_eq!(written.into_inner(), fixture);
+    assert_eq!(decode(written.into_inner()), decode(fixture));
 }
 
 #[test]
