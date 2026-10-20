@@ -976,19 +976,25 @@ fn test_fax4_white_is_min() {
 fn write_extra_bits_image() {
     use tiff::{encoder, tags::ExtraSamples};
 
+    // Encode in memory and compare with the committed fixture. Rewriting the
+    // fixture on disk raced `extra_bits_rgb`, which reads it in parallel.
+    let mut written = std::io::Cursor::new(Vec::new());
+    {
+        let mut encoder = encoder::TiffEncoder::new(&mut written).expect("Cannot create encoder");
+        let mut img = encoder.new_image::<encoder::colortype::RGB8>(8, 8).unwrap();
+
+        img.extra_samples(&[ExtraSamples::Unspecified]).unwrap();
+
+        // all pixels are supposed to be 0, the extra is 1
+        let data: [u8; 256] = core::array::from_fn(|i| (i as u8 % 4).saturating_sub(2));
+
+        img.write_data(&data)
+            .expect("correct amount of data to write");
+    }
+
     let path = PathBuf::from(TEST_IMAGE_DIR).join("extra_bits_rgb_8b.tiff");
-    let img_file = File::create(path).expect("Cannot find test image!");
-
-    let mut encoder = encoder::TiffEncoder::new(img_file).expect("Cannot create encoder");
-    let mut img = encoder.new_image::<encoder::colortype::RGB8>(8, 8).unwrap();
-
-    img.extra_samples(&[ExtraSamples::Unspecified]).unwrap();
-
-    // all pixels are supposed to be 0, the extra is 1
-    let data: [u8; 256] = core::array::from_fn(|i| (i as u8 % 4).saturating_sub(2));
-
-    img.write_data(&data)
-        .expect("correct amount of data to write");
+    let fixture = std::fs::read(path).expect("Cannot find test image!");
+    assert_eq!(written.into_inner(), fixture);
 }
 
 #[test]
