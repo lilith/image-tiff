@@ -42,7 +42,12 @@ impl TileAttributes {
     fn padding_down(&self) -> usize {
         (self.tile_length - self.image_height % self.tile_length) % self.tile_length
     }
+    /// Padding of a tile, given its index in the file's tile sequence.
+    ///
+    /// With `PlanarConfiguration = 2` the sequence holds one full tile grid per
+    /// plane, so the index is reduced to its position within its plane first.
     pub fn get_padding(&self, tile: usize) -> (usize, usize) {
+        let tile = tile % (self.tiles_across() * self.tiles_down());
         let row = tile / self.tiles_across();
         let column = tile % self.tiles_across();
 

@@ -442,13 +442,16 @@ fn one_byte_predict_generic(buf: &mut [u8], stride: usize) {
 /// per sample. Using `from_be_bytes` for endian conversion lets LLVM recognise the byte-swap idiom
 /// and emit efficient code (bswap or movbe).
 fn deinterleave_f32_planes(input: &[u8], output: &mut [[u8; 4]]) {
+    // Each byte plane spans the whole encoded row. `output` may be shorter: a border tile
+    // keeps only its leading samples, but its planes are still split at the full width.
     let n = output.len();
-    if n == 0 || input.len() < n * 4 {
+    let plane = input.len() / 4;
+    if n == 0 || plane < n {
         return;
     }
-    let (p0, rest) = input.split_at(n);
-    let (p1, rest) = rest.split_at(n);
-    let (p2, p3) = rest.split_at(n);
+    let (p0, rest) = input.split_at(plane);
+    let (p1, rest) = rest.split_at(plane);
+    let (p2, p3) = rest.split_at(plane);
 
     // Batch 4 samples per iteration. Fixed-size array slicing eliminates bounds checks.
     let (out_chunks, out_rest) = output.as_chunks_mut::<4>();
@@ -483,11 +486,13 @@ fn deinterleave_f32_planes(input: &[u8], output: &mut [[u8; 4]]) {
 }
 
 fn deinterleave_f16_planes(input: &[u8], output: &mut [[u8; 2]]) {
+    // See `deinterleave_f32_planes` for why planes are split at the input width.
     let n = output.len();
-    if n == 0 || input.len() < n * 2 {
+    let plane = input.len() / 2;
+    if n == 0 || plane < n {
         return;
     }
-    let (p0, p1) = input.split_at(n);
+    let (p0, p1) = input.split_at(plane);
 
     for (out, (b0, b1)) in output.iter_mut().zip(p0.iter().zip(p1)) {
         *out = u16::from_be_bytes([*b0, *b1]).to_ne_bytes();
@@ -495,17 +500,19 @@ fn deinterleave_f16_planes(input: &[u8], output: &mut [[u8; 2]]) {
 }
 
 fn deinterleave_f64_planes(input: &[u8], output: &mut [[u8; 8]]) {
+    // See `deinterleave_f32_planes` for why planes are split at the input width.
     let n = output.len();
-    if n == 0 || input.len() < n * 8 {
+    let plane = input.len() / 8;
+    if n == 0 || plane < n {
         return;
     }
-    let (p0, rest) = input.split_at(n);
-    let (p1, rest) = rest.split_at(n);
-    let (p2, rest) = rest.split_at(n);
-    let (p3, rest) = rest.split_at(n);
-    let (p4, rest) = rest.split_at(n);
-    let (p5, rest) = rest.split_at(n);
-    let (p6, p7) = rest.split_at(n);
+    let (p0, rest) = input.split_at(plane);
+    let (p1, rest) = rest.split_at(plane);
+    let (p2, rest) = rest.split_at(plane);
+    let (p3, rest) = rest.split_at(plane);
+    let (p4, rest) = rest.split_at(plane);
+    let (p5, rest) = rest.split_at(plane);
+    let (p6, p7) = rest.split_at(plane);
 
     for (out, (((((((b0, b1), b2), b3), b4), b5), b6), b7)) in output.iter_mut().zip(
         p0.iter()
