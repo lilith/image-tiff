@@ -1324,9 +1324,15 @@ impl Image {
             && self.chroma_subsampling != (1, 1)
             && !matches!(compression_method, CompressionMethod::ModernJPEG)
         {
+            // Blocks cover the chunk as stored: border tiles keep their full width and length,
+            // and a strip holds only its own rows.
+            let stored_rows = match self.chunk_type {
+                ChunkType::Strip => data_dims.1,
+                ChunkType::Tile => chunk_dims.1,
+            };
             reader = Box::new(super::stream::YCbCrUpsamplingReader::new(
                 reader,
-                data_dims,
+                (chunk_dims.0, stored_rows),
                 self.chroma_subsampling,
             ));
         }

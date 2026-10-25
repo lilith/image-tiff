@@ -380,3 +380,74 @@ fn first_directory_with_over_one_mib_of_offsets() {
         .with_limits(limits);
     decoder.next_image().unwrap();
 }
+
+/// LZW strips without the EndOfInformation code decode when their data is complete (upstream
+/// PR 391); a truncated strip is an error, not zero-filled.
+#[cfg(feature = "lzw")]
+#[test]
+fn lzw_without_end_of_information() {
+    let pixels: Vec<u8> = (0..40u32 * 30).map(|i| (i * 7) as u8).collect();
+    let half = pixels.len() / 2;
+    for eoi in [true, false] {
+        let file = synth::image(40, 30, 8, 1, 5)
+            .short(262, &[1])
+            .long(278, &[15])
+            .strips(vec![
+                synth::lzw_literal(&pixels[..half], eoi),
+                synth::lzw_literal(&pixels[half..], eoi),
+            ])
+            .build();
+        assert_eq!(decode_all_planes(file), pixels, "eoi {eoi}");
+    }
+
+    let mut truncated = synth::lzw_literal(&pixels, false);
+    truncated.truncate(truncated.len() / 2);
+    let file = synth::image(40, 30, 8, 1, 5)
+        .short(262, &[1])
+        .strips(vec![truncated])
+        .build();
+    let mut decoder = Decoder::open(Cursor::new(file)).unwrap();
+    decoder.next_image().unwrap();
+    let mut buffer = vec![0u8; pixels.len()];
+    assert!(decoder.read_image_bytes(&mut buffer).is_err());
+}
+
+/// YCbCr with 2x2 chroma subsampling, uncompressed, in tiles whose right column is a border
+/// tile: each tile stores whole blocks over its full stored width.
+#[test]
+fn ycbcr_subsampled_border_tiles() {
+    let (width, height, tile) = (6usize, 4usize, 4usize);
+    // Pixel (x, y): Y = 10 * y + x, Cb/Cr per 2x2 block.
+    let y_at = |x: usize, y: usize| (10 * y + x) as u8;
+    let cb_at = |bx: usize, by: usize| (100 + 10 * by + bx) as u8;
+    let cr_at = |bx: usize, by: usize| (200 + 10 * by + bx) as u8;
+    let mut tiles = Vec::new();
+    for ty in (0..height).step_by(tile) {
+        for tx in (0..width).step_by(tile) {
+            let mut data = Vec::new();
+            for by in (ty..ty + tile).step_by(2) {
+                for bx in (tx..tx + tile).step_by(2) {
+                    for (dy, dx) in [(0, 0), (0, 1), (1, 0), (1, 1)] {
+                        data.push(y_at(bx + dx, by + dy));
+                    }
+                    data.push(cb_at(bx / 2, by / 2));
+                    data.push(cr_at(bx / 2, by / 2));
+                }
+            }
+            tiles.push(data);
+        }
+    }
+    let file = synth::image(width as u32, height as u32, 8, 3, 1)
+        .short(262, &[6])
+        .short(530, &[2, 2])
+        .short(322, &[tile as u16])
+        .short(323, &[tile as u16])
+        .tiles(tiles)
+        .build();
+    let expected: Vec<u8> = (0..height)
+        .flat_map(|y| {
+            (0..width).flat_map(move |x| [y_at(x, y), cb_at(x / 2, y / 2), cr_at(x / 2, y / 2)])
+        })
+        .collect();
+    assert_eq!(decode_all_planes(file), expected);
+}
