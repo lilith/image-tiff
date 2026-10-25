@@ -17,6 +17,7 @@ says what the decoded output was compared against.
 | — | Group 3 2D (`T4Options` bit 0) decoded as 1D, wrong pixels | Fixed (`19ab3adb`) | Yes | same |
 | — | Group 3 without EOL codes (libtiff's testfax3_bug54_1dnoEOL.tif) decoded 5.7% of pixels wrong | Fixed: rows decode back to back when a strip holds no EOL, as libtiff does | Yes | `ccitt_group3_without_eol`; the file now matches libtiff |
 | — | CCITT wider than 65,535 pixels; G4 strips without EOFB lost their last row | Fixed (`3862a009`, `45c4dd80`) | Yes | `ccitt_wider_than_u16`, `ccitt_group4_without_eofb` |
+| — | Sparse chunks (byte count 0, written by GDAL for COGs) decoded the bytes at their offset as pixels | Fixed: decoded as stored samples of 0, as GDAL and tifffile do (libtiff errors) | Yes: COG | `sparse_chunks_decode_as_zero` |
 | — | Tiled YCbCr with chroma subsampling failed on border tiles (the upsampler got the clipped width) | Fixed | Yes | `ycbcr_subsampled_border_tiles` |
 | 405b | Pure-Rust zstd for wasm | Already in the fork: `zstd-safe-rust` (zrip-decode) | Yes (wasm builds) | — |
 | 405c | Access to extra samples beyond the photometric ones | Open: needs API | Not today: zentiff keeps photometric samples and alpha | — |
@@ -52,6 +53,10 @@ says what the decoded output was compared against.
   strip/tile decompressors (PR in lilith/image-tiff, assigned to lilith).
 
 ## Not yet handled
+
+- DNG predictors 34892-34895 (horizontal X2/X4, floating point X2/X4): rejected at parse as
+  unknown predictors; `tags::Predictor` is an exhaustive public enum, so supporting them needs an
+  API change or an internal numeric predictor.
 
 - Missing `StripByteCounts`: libtiff estimates them for one strip per plane; this fork rejects
   the file.

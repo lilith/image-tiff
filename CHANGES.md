@@ -36,6 +36,9 @@ Fork fixes (2026-10-24), from an inventory of open upstream issues and PRs
 - CCITT images wider than 65,535 pixels decode (`fax` 0.3.0), and Group 4
   strips that end without EOFB no longer lose their last row.
 - YCbCr chroma subsampling without JPEG compression decodes (upstream PR 388).
+- Chunks with no stored bytes (GDAL's sparse tiles and strips) decode as
+  stored samples of 0, as GDAL and tifffile do; they decoded the bytes at
+  their offset.
 - BigTIFF directories claiming more than 65,535 entries are rejected, as in
   libtiff.
 - `Decoder::new` reads the first directory with tiff 0.11.3's value limits, so

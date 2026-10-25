@@ -469,3 +469,32 @@ fn ycbcr_subsampled_border_tiles() {
         .collect();
     assert_eq!(decode_all_planes(file), expected);
 }
+
+/// Chunks with no stored bytes (GDAL's sparse tiles and strips) decode as stored samples of 0,
+/// as in GDAL and tifffile, instead of reading whatever follows their offset.
+#[test]
+fn sparse_chunks_decode_as_zero() {
+    // Two 16x16 tiles; the first is absent, so its offset points at the second tile's bytes.
+    let file = synth::image(32, 16, 8, 1, 1)
+        .short(262, &[1])
+        .short(322, &[16])
+        .short(323, &[16])
+        .tiles(vec![vec![], vec![7u8; 256]])
+        .build();
+    let decoded = decode_all_planes(file);
+    for (i, row) in decoded.chunks(32).enumerate() {
+        assert_eq!(&row[..16], &[0u8; 16], "row {i}");
+        assert_eq!(&row[16..], &[7u8; 16], "row {i}");
+    }
+
+    // Three strips of two rows, the middle one absent.
+    let file = synth::image(4, 6, 8, 1, 1)
+        .short(262, &[1])
+        .long(278, &[2])
+        .strips(vec![vec![1; 8], vec![], vec![3; 8]])
+        .build();
+    assert_eq!(
+        decode_all_planes(file),
+        [vec![1u8; 8], vec![0; 8], vec![3; 8]].concat()
+    );
+}

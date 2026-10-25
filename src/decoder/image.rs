@@ -1305,17 +1305,31 @@ impl Image {
         let is_all_bits = samples == data_samples;
         let is_output_chunk_rows = layout.row_stride == chunk_row_bytes;
 
-        let mut reader: Box<dyn Read> = Self::create_reader(
-            reader.inner(),
-            compression_method,
-            *compressed_bytes,
-            self.jpeg_tables.as_deref().map(|a| &**a),
-            chunk_dims,
-            self.samples,
-            self.fill_order,
-            self.t4_options,
-            limits,
-        )?;
+        // A chunk with no stored bytes is absent (GDAL writes such sparse tiles and strips with
+        // offset and byte count 0). Like GDAL and tifffile, decode it as stored samples of 0;
+        // reading it as data would decode whatever bytes sit at its offset.
+        let mut reader: Box<dyn Read> = if *compressed_bytes == 0 {
+            let stored_rows = match self.chunk_type {
+                ChunkType::Strip => data_dims.1,
+                ChunkType::Tile => chunk_dims.1,
+            };
+            let len = chunk_row_bytes
+                .checked_mul(stored_rows as usize)
+                .ok_or(TiffError::LimitsExceeded)?;
+            Box::new(io::repeat(0).take(len as u64))
+        } else {
+            Self::create_reader(
+                reader.inner(),
+                compression_method,
+                *compressed_bytes,
+                self.jpeg_tables.as_deref().map(|a| &**a),
+                chunk_dims,
+                self.samples,
+                self.fill_order,
+                self.t4_options,
+                limits,
+            )?
+        };
 
         // For non-JPEG YCbCr with chroma subsampling, wrap the decompressor in an
         // upsampling reader that converts the subsampled block layout to full-resolution
