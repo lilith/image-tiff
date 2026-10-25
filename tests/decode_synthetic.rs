@@ -346,3 +346,37 @@ fn bigtiff_directory_entry_count_is_bounded() {
         err.err()
     );
 }
+
+/// `Decoder::new` reads the first directory before `with_limits` can apply, so it keeps tiff
+/// 0.11.3's behaviour: a first image with more than `ifd_value_size` (1 MiB) of strip offsets
+/// opens. Here 262,145 one-row strips need 1 MiB + 4 bytes of offsets. `Decoder::open`
+/// followed by `next_image` applies the default limit, and `with_limits` can raise it.
+#[test]
+fn first_directory_with_over_one_mib_of_offsets() {
+    let rows = 262_145u32;
+    let strips: Vec<Vec<u8>> = (0..rows).map(|i| vec![i as u8]).collect();
+    let file = synth::image(1, rows, 8, 1, 1)
+        .short(262, &[1])
+        .long(278, &[1])
+        .strips(strips)
+        .build();
+
+    #[allow(deprecated)]
+    let mut decoder = Decoder::new(Cursor::new(file.clone())).unwrap();
+    let mut buffer = vec![0u8; rows as usize];
+    decoder.read_image_bytes(&mut buffer).unwrap();
+    assert!(buffer.iter().enumerate().all(|(i, &b)| b == i as u8));
+
+    let mut decoder = Decoder::open(Cursor::new(file.clone())).unwrap();
+    assert!(matches!(
+        decoder.next_image(),
+        Err(tiff::TiffError::LimitsExceeded)
+    ));
+
+    let mut limits = tiff::decoder::Limits::default();
+    limits.ifd_value_size = 2 << 20;
+    let mut decoder = Decoder::open(Cursor::new(file))
+        .unwrap()
+        .with_limits(limits);
+    decoder.next_image().unwrap();
+}

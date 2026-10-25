@@ -930,7 +930,16 @@ impl<R: Read + Seek> Decoder<R> {
     pub fn new(mut r: R) -> TiffResult<Decoder<R>> {
         let header = TiffHeader::parse(&mut r)?;
         let mut decoder = header.open(r);
-        decoder.next_image()?;
+        // Fork: tiff 0.11.3 did not enforce `ifd_value_size`, and `new` parses the first
+        // directory before `with_limits` can raise it, so a first image with more than 1 MiB of
+        // strip or tile offsets would no longer open. Read the first directory with the value
+        // limit raised to the decoding buffer limit, then restore the configured limits.
+        let limits = decoder.value_reader.limits.clone();
+        decoder.value_reader.limits.ifd_value_size =
+            limits.ifd_value_size.max(limits.decoding_buffer_size);
+        let first = decoder.next_image();
+        decoder.value_reader.limits = limits;
+        first?;
         Ok(decoder)
     }
 
