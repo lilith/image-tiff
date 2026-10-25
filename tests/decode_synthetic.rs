@@ -294,6 +294,21 @@ fn ccitt_wider_than_u16() {
     });
 }
 
+/// Group 4 strips that end without EOFB, so the last row's codes end in the last bits of the
+/// strip. The fax crate's bit reader could not match a code there and the last row was lost.
+#[cfg(feature = "fax")]
+#[test]
+fn ccitt_group4_without_eofb() {
+    for (i, &width) in [1usize, 5, 13, 40, 203].iter().enumerate() {
+        for seed in 0..20 {
+            let rows = ccitt_rows(width, 4, (i * 100 + seed) as u32);
+            check_ccitt(4, None, 1, &rows, 4, |r| {
+                synth::ccitt::group4_without_eofb(r)
+            });
+        }
+    }
+}
+
 /// Uncompressed mode (T4Options bit 1) is not implemented and must not decode as data.
 #[cfg(feature = "fax")]
 #[test]

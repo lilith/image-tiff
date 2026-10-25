@@ -274,10 +274,13 @@ impl<R: Read> Read for PackBitsReader<R> {
     }
 }
 
-/// Iterator adapter that reverses bits in each byte for FillOrder=2 (LSB-to-MSB).
+/// Iterator adapter that reverses bits in each byte for FillOrder=2 (LSB-to-MSB), followed by
+/// two zero bytes.
 #[cfg(feature = "fax")]
-type FaxBytes<R> =
-    core::iter::Map<io::Bytes<io::BufReader<io::Take<R>>>, fn(io::Result<u8>) -> io::Result<u8>>;
+type FaxBytes<R> = core::iter::Chain<
+    core::iter::Map<io::Bytes<io::BufReader<io::Take<R>>>, fn(io::Result<u8>) -> io::Result<u8>>,
+    core::array::IntoIter<io::Result<u8>, 2>,
+>;
 
 #[cfg(feature = "fax")]
 fn fax_byte_iter<R: Read>(reader: R, len: u64, fill_order: u16) -> FaxBytes<R> {
@@ -286,7 +289,13 @@ fn fax_byte_iter<R: Read>(reader: R, len: u64, fill_order: u16) -> FaxBytes<R> {
     } else {
         |r| r
     };
-    io::BufReader::new(reader.take(len)).bytes().map(map_fn)
+    // fax 0.3.0's bit reader cannot match a code in the last bits of its input, which loses
+    // the last row of a strip that ends without EOFB. Zero bits complete no code; see the
+    // same padding in `Group3Reader::new`.
+    io::BufReader::new(reader.take(len))
+        .bytes()
+        .map(map_fn)
+        .chain([Ok(0), Ok(0)])
 }
 
 #[cfg(feature = "fax")]

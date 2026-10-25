@@ -367,6 +367,17 @@ pub mod ccitt {
         sink.bytes()
     }
 
+    /// Group 4 rows without the end-of-facsimile-block marker.
+    pub fn group4_without_eofb(rows: &[Vec<bool>]) -> Vec<u8> {
+        let sink = Sink::default();
+        let width = rows.first().map_or(0, |r| r.len()) as u32;
+        let mut encoder = fax34::encoder::Encoder::new(sink.clone());
+        for row in rows {
+            encoder.encode_line(pels(row), width).unwrap();
+        }
+        sink.bytes()
+    }
+
     /// Packs rows MSB-first, one bit per pixel, each row padded to a byte.
     pub fn pack(rows: &[Vec<bool>]) -> Vec<u8> {
         rows.iter()
