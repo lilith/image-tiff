@@ -325,3 +325,24 @@ fn ccitt_group3_uncompressed_mode_is_unsupported() {
     let mut buffer = vec![0u8; layout.complete_len];
     assert!(decoder.read_image_bytes(&mut buffer).is_err());
 }
+
+/// A BigTIFF directory claiming more than 65,535 entries is rejected, as libtiff does, instead
+/// of being read entry by entry.
+#[test]
+fn bigtiff_directory_entry_count_is_bounded() {
+    let mut file = b"II\x2b\x00\x08\x00\x00\x00".to_vec();
+    file.extend_from_slice(&16u64.to_le_bytes());
+    file.extend_from_slice(&70_000u64.to_le_bytes());
+    file.resize(file.len() + 70_000 * 20 + 8, 0);
+    let err = Decoder::open(Cursor::new(file)).and_then(|mut d| d.next_image().map(|_| d));
+    assert!(
+        matches!(
+            err,
+            Err(tiff::TiffError::FormatError(
+                tiff::TiffFormatError::ImageFileDirectoryNotFound
+            ))
+        ),
+        "{:?}",
+        err.err()
+    );
+}

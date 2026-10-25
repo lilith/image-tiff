@@ -2157,7 +2157,14 @@ impl<R: Seek + Read> ValueReader<R> {
         let mut entries: BTreeMap<_, _> = BTreeMap::new();
 
         let num_tags = if bigtiff {
-            reader.read_u64()?
+            // libtiff rejects BigTIFF directories with more entries than a classic TIFF can
+            // hold: such a count is almost certainly not a directory, and reading it would
+            // walk up to 2^64 entries of the file.
+            let count = reader.read_u64()?;
+            if count > u64::from(u16::MAX) {
+                return Err(TiffFormatError::ImageFileDirectoryNotFound.into());
+            }
+            count
         } else {
             reader.read_u16()?.into()
         };
