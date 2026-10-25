@@ -196,3 +196,188 @@ pub fn deflate(data: &[u8]) -> Vec<u8> {
     enc.write_all(data).unwrap();
     enc.finish().unwrap()
 }
+
+/// TIFF LZW (MSB-first, early change) using only literal codes, with a Clear code every 250
+/// codes so all codes stay 9 bits wide. `with_eoi = false` leaves out the trailing
+/// EndOfInformation code, as some writers do.
+pub fn lzw_literal(data: &[u8], with_eoi: bool) -> Vec<u8> {
+    let mut codes = Vec::new();
+    for (i, &b) in data.iter().enumerate() {
+        if i % 250 == 0 {
+            codes.push(256u16);
+        }
+        codes.push(u16::from(b));
+    }
+    if data.is_empty() {
+        codes.push(256);
+    }
+    if with_eoi {
+        codes.push(257);
+    }
+    let mut out = Vec::new();
+    let (mut acc, mut nbits) = (0u32, 0u32);
+    for code in codes {
+        acc = (acc << 9) | u32::from(code);
+        nbits += 9;
+        while nbits >= 8 {
+            out.push((acc >> (nbits - 8)) as u8);
+            nbits -= 8;
+        }
+        acc &= (1 << nbits) - 1;
+    }
+    if nbits > 0 {
+        out.push((acc << (8 - nbits)) as u8);
+    }
+    out
+}
+
+/// CCITT test encoders built on the fax crate's code tables and two-dimensional line
+/// encoder. Rows are `true` for black pixels.
+#[cfg(feature = "fax")]
+pub mod ccitt {
+    use fax34::maps::{black, white};
+    use fax34::{BitWriter, Bits, Color};
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    #[derive(Default)]
+    struct Buffer {
+        bits: Vec<bool>,
+        muted: bool,
+    }
+
+    /// A bit sink shared between the fax crate's line encoder and the EOL / tag writer.
+    #[derive(Clone, Default)]
+    struct Sink(Rc<RefCell<Buffer>>);
+
+    impl BitWriter for Sink {
+        type Error = std::convert::Infallible;
+        fn write(&mut self, bits: Bits) -> Result<(), Self::Error> {
+            let mut buf = self.0.borrow_mut();
+            if !buf.muted {
+                for i in (0..bits.len).rev() {
+                    buf.bits.push((bits.data >> i) & 1 == 1);
+                }
+            }
+            Ok(())
+        }
+    }
+
+    impl Sink {
+        fn put(&self, data: u16, len: u8) {
+            self.clone().write(Bits { data, len }).unwrap();
+        }
+        fn len(&self) -> usize {
+            self.0.borrow().bits.len()
+        }
+        fn mute(&self, muted: bool) {
+            self.0.borrow_mut().muted = muted;
+        }
+        fn bytes(&self) -> Vec<u8> {
+            let bits = &self.0.borrow().bits;
+            bits.chunks(8)
+                .map(|c| {
+                    c.iter()
+                        .enumerate()
+                        .fold(0u8, |b, (i, &v)| b | (u8::from(v) << (7 - i)))
+                })
+                .collect()
+        }
+    }
+
+    fn run(sink: &Sink, black_run: bool, mut n: u16) {
+        let code = |n: u16| {
+            if black_run {
+                black::encode(n)
+            } else {
+                white::encode(n)
+            }
+            .unwrap()
+        };
+        let mut w = sink.clone();
+        while n >= 2560 {
+            w.write(code(2560)).unwrap();
+            n -= 2560;
+        }
+        if n >= 64 {
+            w.write(code(n & !63)).unwrap();
+            n &= 63;
+        }
+        w.write(code(n)).unwrap();
+    }
+
+    /// One-dimensional row: alternating runs starting with white.
+    fn row_1d(sink: &Sink, row: &[bool]) {
+        let mut color = false;
+        let mut x = 0;
+        while x < row.len() {
+            let n = row[x..].iter().take_while(|&&p| p == color).count();
+            run(sink, color, n as u16);
+            x += n;
+            color = !color;
+        }
+        // A row that ends on a black run needs no closing white run, but a row that starts
+        // black opens with a zero-length white run, which the loop above already wrote.
+    }
+
+    fn pels(row: &[bool]) -> impl Iterator<Item = Color> + '_ {
+        row.iter()
+            .map(|&b| if b { Color::Black } else { Color::White })
+    }
+
+    /// Modified Huffman (compression 2): 1D rows, each padded to a byte boundary.
+    pub fn modified_huffman(rows: &[Vec<bool>]) -> Vec<u8> {
+        let sink = Sink::default();
+        for row in rows {
+            row_1d(&sink, row);
+            while sink.len() % 8 != 0 {
+                sink.put(0, 1);
+            }
+        }
+        sink.bytes()
+    }
+
+    /// Group 3 with the given T4Options. With two-dimensional coding, every `k`-th row is
+    /// one-dimensional and the rest are coded against the previous row.
+    pub fn group3(rows: &[Vec<bool>], options: u32, k: usize) -> Vec<u8> {
+        let sink = Sink::default();
+        let width = rows.first().map_or(0, |r| r.len()) as u16;
+        let mut encoder = fax34::encoder::Encoder::new(sink.clone());
+        for (y, row) in rows.iter().enumerate() {
+            if options & 4 != 0 {
+                while (sink.len() + 12) % 8 != 0 {
+                    sink.put(0, 1);
+                }
+            }
+            sink.put(1, 12);
+            let one_dimensional = options & 1 == 0 || y % k == 0;
+            if options & 1 != 0 {
+                sink.put(u16::from(one_dimensional), 1);
+            }
+            // The line encoder always runs so its reference row stays current; its output
+            // is kept only for two-dimensional rows.
+            sink.mute(one_dimensional);
+            encoder.encode_line(pels(row), width).unwrap();
+            sink.mute(false);
+            if one_dimensional {
+                row_1d(&sink, row);
+            }
+        }
+        sink.bytes()
+    }
+
+    /// Packs rows MSB-first, one bit per pixel, each row padded to a byte.
+    pub fn pack(rows: &[Vec<bool>]) -> Vec<u8> {
+        rows.iter()
+            .flat_map(|row| {
+                row.chunks(8)
+                    .map(|c| {
+                        c.iter()
+                            .enumerate()
+                            .fold(0u8, |b, (i, &v)| b | (u8::from(v) << (7 - i)))
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect()
+    }
+}

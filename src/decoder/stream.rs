@@ -397,17 +397,34 @@ type OwnedBitReader = fax34::ByteReader<
     core::iter::Map<std::vec::IntoIter<u8>, fn(u8) -> Result<u8, std::convert::Infallible>>,
 >;
 
-/// Decodes CCITT Group 3 (T.4) 1D compressed data line by line.
+#[cfg(feature = "fax")]
+use fax34::BitReader as _;
+
+/// The CCITT schemes built from T.4 run-length codes.
+#[cfg(feature = "fax")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CcittScheme {
+    /// Compression 2 (Modified Huffman): one-dimensional rows without EOL codes, each row
+    /// starting on a byte boundary.
+    ModifiedHuffman,
+    /// Compression 3 (T.4 / Group 3) with its `T4Options` value. Bit 0 selects
+    /// two-dimensional coding, bit 1 uncompressed mode, bit 2 byte-aligned EOL codes.
+    Group3 { options: u32 },
+}
+
+/// Decodes CCITT Modified Huffman and Group 3 (T.4) data, one row at a time.
 ///
-/// The fax crate's `Group3Decoder` has a bug where `new()` doesn't consume the
-/// initial EOL marker, causing its lookup tables to destructively consume bits
-/// from the EOL when trying to decode run-length codes. We work around this by
-/// using the crate's lower-level `white::decode` / `black::decode` functions
-/// and handling EOL markers ourselves.
+/// Rows are decoded with the fax crate's run-length code tables; EOL codes, the 1D/2D tag
+/// bit and the two-dimensional modes are handled here. The fax crate's `Group3Decoder` only
+/// decodes one-dimensional rows.
 #[cfg(feature = "fax")]
 pub struct Group3Reader {
     reader: OwnedBitReader,
     line_buf: io::Cursor<Vec<u8>>,
+    /// Changing elements of the previous row, the reference for two-dimensional rows.
+    reference: Vec<u16>,
+    current: Vec<u16>,
+    scheme: CcittScheme,
     height: u32,
     width: u16,
     y: u32,
@@ -420,10 +437,22 @@ impl Group3Reader {
         reader: R,
         compressed_length: u64,
         fill_order: u16,
+        scheme: CcittScheme,
         limits: &super::Limits,
     ) -> crate::TiffResult<Self> {
         let width = u16::try_from(dimensions.0)?;
         let height = dimensions.1;
+
+        if let CcittScheme::Group3 { options } = scheme {
+            // Uncompressed mode needs the T.4 extension codes, which are not implemented.
+            if options & 0b10 != 0 {
+                return Err(crate::TiffError::UnsupportedError(
+                    crate::TiffUnsupportedError::UnsupportedCompressionMethod(
+                        crate::tags::CompressionMethod::Fax3,
+                    ),
+                ));
+            }
+        }
 
         // Cast u64 -> usize via try_from (catches truncation on 32-bit) and
         // bound against `intermediate_buffer_size` so an attacker-controlled
@@ -443,29 +472,55 @@ impl Group3Reader {
             }
         }
 
+        // The code tables peek a fixed number of bits, and `ByteReader::peek` returns `None`
+        // when fewer remain, so a code in the last bits of the data would not decode. Two zero
+        // bytes cover the widest peek; zero bits are EOL fill and complete no code.
+        compressed.extend_from_slice(&[0, 0]);
+
         // Create an owning bit reader (Vec consumed by into_iter, no borrow issues)
         let map_fn: fn(u8) -> Result<u8, std::convert::Infallible> = Ok;
-        let mut bit_reader = fax34::ByteReader::new(compressed.into_iter().map(map_fn)).unwrap();
-
-        // Skip fill bits + initial EOL marker
-        Self::skip_eol(&mut bit_reader);
+        let bit_reader = fax34::ByteReader::new(compressed.into_iter().map(map_fn)).unwrap();
 
         Ok(Self {
             reader: bit_reader,
-            line_buf: io::Cursor::new(Vec::with_capacity(width.into())),
+            line_buf: io::Cursor::new(Vec::with_capacity(usize::from(width).div_ceil(8))),
+            reference: Vec::new(),
+            current: Vec::new(),
+            scheme,
             width,
             height,
             y: 0,
         })
     }
 
-    /// Skip zero fill bits followed by the terminating '1' bit of an EOL code.
-    fn skip_eol(reader: &mut impl fax34::BitReader) {
+    /// Advance to the next EOL code (eleven or more zero bits, then a one) and consume it,
+    /// discarding any bits before it, as libtiff does at the start of every Group 3 row.
+    /// Returns false when the data ends first.
+    fn sync_eol(reader: &mut OwnedBitReader) -> bool {
+        loop {
+            match reader.peek(11) {
+                Some(0) => break,
+                Some(_) => {
+                    if reader.consume(1).is_err() {
+                        return false;
+                    }
+                }
+                None => return false,
+            }
+        }
         while reader.peek(1) == Some(0) {
             let _ = reader.consume(1);
         }
         if reader.peek(1) == Some(1) {
             let _ = reader.consume(1);
+        }
+        true
+    }
+
+    fn skip_to_byte_boundary(reader: &mut OwnedBitReader) {
+        let n = reader.bits_to_byte_boundary();
+        if n > 0 && n < 8 {
+            let _ = reader.consume(n);
         }
     }
 
@@ -483,6 +538,105 @@ impl Group3Reader {
         }
         None
     }
+
+    fn run(reader: &mut OwnedBitReader, white: bool) -> Option<u16> {
+        if white {
+            Self::with_markup(fax34::maps::white::decode, reader)
+        } else {
+            Self::with_markup(fax34::maps::black::decode, reader)
+        }
+    }
+
+    /// One-dimensional row: alternating white and black runs until the row is full. A code
+    /// that does not decode (such as the zeros of an early EOL) ends the row, and the rest of
+    /// the row keeps the current color, as in libtiff.
+    fn decode_1d(&mut self) {
+        let width = self.width;
+        let mut a0 = 0u16;
+        let mut white = true;
+        while a0 < width {
+            let Some(run) = Self::run(&mut self.reader, white) else {
+                break;
+            };
+            let Some(a1) = a0.checked_add(run) else {
+                break;
+            };
+            if a1 < width {
+                self.current.push(a1);
+            }
+            a0 = a1;
+            white = !white;
+        }
+    }
+
+    /// Two-dimensional row (T.4 section 4.2), coded against the previous row's changing
+    /// elements. Changing elements at even indices start black runs, odd ones white runs.
+    fn decode_2d(&mut self) {
+        use fax34::maps::{mode, Mode};
+
+        let width = self.width;
+        let reference = &self.reference;
+        // `a0` is `None` for the imaginary white element before the first pixel.
+        let mut a0: Option<u16> = None;
+        let mut white = true;
+        loop {
+            let start = a0.unwrap_or(0);
+            if a0.is_some() && start >= width {
+                break;
+            }
+            // b1: first changing element of the reference row right of a0 whose color is
+            // opposite to a0's; b2: the changing element after it.
+            let first = reference
+                .iter()
+                .enumerate()
+                .position(|(i, &p)| a0.is_none_or(|a0| p > a0) && (i % 2 == 0) == white);
+            let (b1, b2) = match first {
+                Some(i) => (reference[i], reference.get(i + 1).copied().unwrap_or(width)),
+                None => (width, width),
+            };
+
+            let Some(code) = mode::decode(&mut self.reader) else {
+                break;
+            };
+            match code {
+                Mode::Pass => a0 = Some(b2),
+                Mode::Horizontal => {
+                    let Some(r1) = Self::run(&mut self.reader, white) else {
+                        break;
+                    };
+                    let Some(r2) = Self::run(&mut self.reader, !white) else {
+                        break;
+                    };
+                    let Some(a1) = start.checked_add(r1) else {
+                        break;
+                    };
+                    let Some(a2) = a1.checked_add(r2) else {
+                        break;
+                    };
+                    for p in [a1, a2] {
+                        if p < width {
+                            self.current.push(p);
+                        }
+                    }
+                    a0 = Some(a2);
+                }
+                Mode::Vertical(delta) => {
+                    let a1 = i32::from(b1) + i32::from(delta);
+                    // A changing element must lie right of a0 and within the row.
+                    if a1 < 0 || a1 > i32::from(width) || a0.is_some_and(|a0| a1 <= i32::from(a0)) {
+                        break;
+                    }
+                    let a1 = a1 as u16;
+                    if a1 < width {
+                        self.current.push(a1);
+                    }
+                    a0 = Some(a1);
+                    white = !white;
+                }
+                Mode::Extension | Mode::EOF => break,
+            }
+        }
+    }
 }
 
 #[cfg(feature = "fax")]
@@ -491,29 +645,31 @@ impl Read for Group3Reader {
         if self.line_buf.position() as usize == self.line_buf.get_ref().len()
             && self.y < self.height
         {
-            // Decode one line of alternating white/black run-lengths
-            let mut transitions = Vec::new();
-            let mut a0 = 0u16;
-            let mut is_white = true;
-            loop {
-                let run = if is_white {
-                    Self::with_markup(fax34::maps::white::decode, &mut self.reader)
-                } else {
-                    Self::with_markup(fax34::maps::black::decode, &mut self.reader)
-                };
-                match run {
-                    Some(len) => {
-                        a0 = match a0.checked_add(len) {
-                            Some(v) => v,
-                            None => break, // overflow = corrupt data
+            self.current.clear();
+            match self.scheme {
+                CcittScheme::ModifiedHuffman => {
+                    self.decode_1d();
+                    Self::skip_to_byte_boundary(&mut self.reader);
+                }
+                CcittScheme::Group3 { options } => {
+                    // Every row is preceded by an EOL; with two-dimensional coding a tag bit
+                    // follows it: 1 for a one-dimensional row, 0 for a two-dimensional row.
+                    Self::sync_eol(&mut self.reader);
+                    let two_dimensional = options & 1 != 0
+                        && match self.reader.peek(1) {
+                            Some(bit) => {
+                                let _ = self.reader.consume(1);
+                                bit == 0
+                            }
+                            None => false,
                         };
-                        transitions.push(a0);
-                        is_white = !is_white;
+                    if two_dimensional {
+                        self.decode_2d();
+                    } else {
+                        self.decode_1d();
                     }
-                    None => break,
                 }
             }
-
             self.y += 1;
 
             // Convert transitions to packed bilevel output
@@ -522,16 +678,14 @@ impl Read for Group3Reader {
             buffer.clear();
             buffer.resize(bytes_per_line, 0u8);
 
-            let pels = fax34::decoder::pels(&transitions, self.width);
+            let pels = fax34::decoder::pels(&self.current, self.width);
             for (i, c) in pels.enumerate() {
                 if c == fax34::Color::Black {
                     buffer[i / 8] |= 1 << (7 - (i % 8));
                 }
             }
             self.line_buf.set_position(0);
-
-            // Skip fill bits + line-ending EOL
-            Self::skip_eol(&mut self.reader);
+            std::mem::swap(&mut self.reference, &mut self.current);
         }
 
         self.line_buf.read(buf)
@@ -650,7 +804,14 @@ mod test {
         // Empty backing reader; the size check happens before any reads.
         let backing: &[u8] = &[];
         let cursor = io::Cursor::new(backing);
-        let result = Group3Reader::new((16, 16), cursor, 4096, 1, &limits);
+        let result = Group3Reader::new(
+            (16, 16),
+            cursor,
+            4096,
+            1,
+            CcittScheme::Group3 { options: 0 },
+            &limits,
+        );
         match result {
             Err(crate::TiffError::LimitsExceeded) => {}
             Err(other) => panic!("expected LimitsExceeded, got {other:?}"),
@@ -667,7 +828,14 @@ mod test {
         let backing: &[u8] = &[];
         let cursor = io::Cursor::new(backing);
         // u64::MAX cannot fit in usize on any supported target.
-        let result = Group3Reader::new((16, 16), cursor, u64::MAX, 1, &limits);
+        let result = Group3Reader::new(
+            (16, 16),
+            cursor,
+            u64::MAX,
+            1,
+            CcittScheme::Group3 { options: 0 },
+            &limits,
+        );
         match result {
             Err(crate::TiffError::LimitsExceeded) => {}
             Err(other) => panic!("expected LimitsExceeded, got {other:?}"),

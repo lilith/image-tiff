@@ -158,3 +158,125 @@ fn missing_photometric_interpretation() {
     let mut decoder = Decoder::open(Cursor::new(file)).unwrap();
     assert!(decoder.next_image().is_err());
 }
+
+#[cfg(feature = "fax")]
+fn ccitt_rows(width: usize, height: usize, seed: u32) -> Vec<Vec<bool>> {
+    let mut state = seed.wrapping_mul(2654435761) | 1;
+    let mut next = move || {
+        state ^= state << 13;
+        state ^= state >> 17;
+        state ^= state << 5;
+        state
+    };
+    (0..height)
+        .map(|y| match y % 5 {
+            0 => vec![false; width],
+            1 => vec![true; width],
+            _ => {
+                let mut row = Vec::with_capacity(width);
+                let max_run = [3, 40, 700][y % 3];
+                let mut color = next() % 2 == 0;
+                while row.len() < width {
+                    let n = (next() % max_run + 1) as usize;
+                    row.extend(std::iter::repeat_n(color, n.min(width - row.len())));
+                    color = !color;
+                }
+                row
+            }
+        })
+        .collect()
+}
+
+/// Encodes `rows` in strips of `rows_per_strip` with `encode`, decodes the file and checks
+/// every pixel. Photometric is WhiteIsZero; the decoder normalizes it so a decoded 1 bit is
+/// white. Bits past the row width are padding and are not compared.
+#[cfg(feature = "fax")]
+fn check_ccitt(
+    compression: u16,
+    t4_options: Option<u32>,
+    fill_order: u16,
+    rows: &[Vec<bool>],
+    rows_per_strip: usize,
+    encode: impl Fn(&[Vec<bool>]) -> Vec<u8>,
+) {
+    let width = rows[0].len();
+    let strips: Vec<Vec<u8>> = rows
+        .chunks(rows_per_strip)
+        .map(|strip| {
+            let mut data = encode(strip);
+            if fill_order == 2 {
+                data.iter_mut().for_each(|b| *b = b.reverse_bits());
+            }
+            data
+        })
+        .collect();
+    let mut file = synth::image(width as u32, rows.len() as u32, 1, 1, compression)
+        .short(262, &[0])
+        .short(266, &[fill_order])
+        .long(278, &[rows_per_strip as u32]);
+    if let Some(options) = t4_options {
+        file = file.long(292, &[options]);
+    }
+    let mut decoded = decode_all_planes(file.strips(strips).build());
+    let row_bytes = width.div_ceil(8);
+    if !width.is_multiple_of(8) {
+        let keep = 0xffu8 << (8 - width % 8);
+        for row in decoded.chunks_mut(row_bytes) {
+            row[row_bytes - 1] &= keep;
+        }
+    }
+    let white: Vec<Vec<bool>> = rows
+        .iter()
+        .map(|r| r.iter().map(|&b| !b).collect())
+        .collect();
+    assert_eq!(
+        decoded,
+        synth::ccitt::pack(&white),
+        "compression {compression}, T4Options {t4_options:?}, FillOrder {fill_order}, width {width}"
+    );
+}
+
+/// Group 3 rows coded two-dimensionally (T4Options bit 0) were decoded as one-dimensional
+/// rows, producing wrong pixels; Modified Huffman (compression 2, upstream issue 405) was
+/// unsupported.
+#[cfg(feature = "fax")]
+#[test]
+fn ccitt_group3_and_modified_huffman() {
+    for (i, &width) in [1usize, 13, 64, 300, 1728, 2600].iter().enumerate() {
+        let rows = ccitt_rows(width, 11, i as u32 + 1);
+        for fill_order in [1, 2] {
+            for rows_per_strip in [11, 4] {
+                check_ccitt(2, None, fill_order, &rows, rows_per_strip, |r| {
+                    synth::ccitt::modified_huffman(r)
+                });
+                for options in [0, 4] {
+                    check_ccitt(3, Some(options), fill_order, &rows, rows_per_strip, |r| {
+                        synth::ccitt::group3(r, options, 1)
+                    });
+                }
+                for (options, k) in [(1, 2), (1, 4), (5, 4), (1, usize::MAX)] {
+                    check_ccitt(3, Some(options), fill_order, &rows, rows_per_strip, |r| {
+                        synth::ccitt::group3(r, options, k)
+                    });
+                }
+            }
+        }
+    }
+}
+
+/// Uncompressed mode (T4Options bit 1) is not implemented and must not decode as data.
+#[cfg(feature = "fax")]
+#[test]
+fn ccitt_group3_uncompressed_mode_is_unsupported() {
+    let rows = ccitt_rows(16, 4, 9);
+    let file = synth::image(16, 4, 1, 1, 3)
+        .short(262, &[0])
+        .long(292, &[2])
+        .strips(vec![synth::ccitt::group3(&rows, 0, 1)])
+        .build();
+    let mut decoder = Decoder::open(Cursor::new(file)).unwrap();
+    decoder.next_image().unwrap();
+    let layout = decoder.image_buffer_layout().unwrap();
+    let mut buffer = vec![0u8; layout.complete_len];
+    assert!(decoder.read_image_bytes(&mut buffer).is_err());
+}

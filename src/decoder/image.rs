@@ -92,6 +92,8 @@ pub(crate) struct Image {
     pub chroma_subsampling: (u16, u16),
     /// FillOrder: 1 = MSB-to-LSB (default), 2 = LSB-to-MSB (common in fax images)
     pub fill_order: u16,
+    /// `T4Options` (292) for Group 3 compression, 0 when absent.
+    pub t4_options: u32,
     /// The color map (palette) for `PhotometricInterpretation::RGBPalette`.
     /// Contains `3 * 2^BitsPerSample` u16 entries: R values, then G values, then B values.
     pub color_map: Option<Vec<u16>>,
@@ -340,6 +342,18 @@ impl Image {
             .transpose()?
             .unwrap_or(1);
 
+        // T4Options (292) only matters for Group 3; it is read through its number because
+        // `Tag` has no named variant for it.
+        let t4_options = if compression_method == CompressionMethod::Fax3 {
+            tag_reader
+                .find_tag(Tag::Unknown(292))?
+                .map(Value::into_u32)
+                .transpose()?
+                .unwrap_or(0)
+        } else {
+            0
+        };
+
         let planes = match planar_config {
             PlanarConfiguration::Chunky => 1,
             PlanarConfiguration::Planar => samples,
@@ -519,6 +533,7 @@ impl Image {
             chunk_bytes,
             chroma_subsampling,
             fill_order,
+            t4_options,
             color_map,
             decompression_to_host_endian: matches!(
                 compression_method,
@@ -721,6 +736,7 @@ impl Image {
         dimensions: (u32, u32),
         samples: u16,
         #[cfg_attr(not(feature = "fax"), allow(unused_variables))] fill_order: u16,
+        #[cfg_attr(not(feature = "fax"), allow(unused_variables))] t4_options: u32,
         #[cfg_attr(
             not(any(feature = "webp", feature = "fax", feature = "jpeg")),
             allow(unused_variables)
@@ -847,6 +863,18 @@ impl Image {
                 reader,
                 compressed_length,
                 fill_order,
+                super::stream::CcittScheme::Group3 {
+                    options: t4_options,
+                },
+                limits,
+            )?),
+            #[cfg(feature = "fax")]
+            CompressionMethod::Huffman => Box::new(super::stream::Group3Reader::new(
+                dimensions,
+                reader,
+                compressed_length,
+                fill_order,
+                super::stream::CcittScheme::ModifiedHuffman,
                 limits,
             )?),
             #[cfg(feature = "fax")]
@@ -1281,6 +1309,7 @@ impl Image {
             chunk_dims,
             self.samples,
             self.fill_order,
+            self.t4_options,
             limits,
         )?;
 
