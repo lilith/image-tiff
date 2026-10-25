@@ -118,3 +118,43 @@ fn float_predictor_border_tiles_f32_rgb() {
 fn float_predictor_border_tiles_f64_gray() {
     float_predictor_border_tiles(8, 1);
 }
+
+/// PhotometricInterpretation is required, but GIS and scientific writers omit it (upstream
+/// issue 253). One color sample decodes as BlackIsZero and three as RGB, as libtiff's RGBA
+/// reader and GDAL do; other sample counts stay unsupported.
+#[test]
+fn missing_photometric_interpretation() {
+    use tiff::ColorType;
+
+    let gray: Vec<u8> = (0..20u32 * 6).map(|i| (i * 3) as u8).collect();
+    let file = synth::image(20, 6, 8, 1, 1)
+        .strips(vec![gray.clone()])
+        .build();
+    let mut decoder = Decoder::open(Cursor::new(file.clone())).unwrap();
+    decoder.next_image().unwrap();
+    assert_eq!(decoder.colortype().unwrap(), ColorType::Gray(8));
+    assert_eq!(decode_all_planes(file), gray);
+
+    let rgb: Vec<u8> = (0..20u32 * 6 * 3).map(|i| (i * 5) as u8).collect();
+    let file = synth::image(20, 6, 8, 3, 1)
+        .strips(vec![rgb.clone()])
+        .build();
+    let mut decoder = Decoder::open(Cursor::new(file.clone())).unwrap();
+    decoder.next_image().unwrap();
+    assert_eq!(decoder.colortype().unwrap(), ColorType::RGB(8));
+    assert_eq!(decode_all_planes(file), rgb);
+
+    // Two color samples have no conventional interpretation.
+    let two: Vec<u8> = vec![0; 20 * 6 * 2];
+    let file = synth::image(20, 6, 8, 2, 1).strips(vec![two]).build();
+    let mut decoder = Decoder::open(Cursor::new(file)).unwrap();
+    assert!(decoder.next_image().is_err());
+
+    // A present but unknown value is still rejected.
+    let file = synth::image(20, 6, 8, 1, 1)
+        .short(262, &[999])
+        .strips(vec![gray])
+        .build();
+    let mut decoder = Decoder::open(Cursor::new(file)).unwrap();
+    assert!(decoder.next_image().is_err());
+}

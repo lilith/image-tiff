@@ -176,12 +176,19 @@ impl Image {
             )));
         }
 
-        let photometric_interpretation = tag_reader
+        // `None` when the tag is absent; a present but unknown value is an error. A missing
+        // tag is resolved below, once the number of color samples is known.
+        let photometric_tag = match tag_reader
             .find_tag(Tag::PhotometricInterpretation)?
             .map(Value::into_u16)
             .transpose()?
-            .and_then(PhotometricInterpretation::from_u16)
-            .ok_or(TiffUnsupportedError::UnknownInterpretation)?;
+        {
+            Some(value) => Some(
+                PhotometricInterpretation::from_u16(value)
+                    .ok_or(TiffUnsupportedError::UnknownInterpretation)?,
+            ),
+            None => None,
+        };
 
         // Try to parse both the compression method and the number, format, and bits of the included samples.
         // If they are not explicitly specified, those tags are reset to their default values and not carried from previous images.
@@ -235,6 +242,16 @@ impl Image {
                 ));
             }
             Some(n) => n as u16,
+        };
+
+        // PhotometricInterpretation is required, but some scientific and GIS writers omit it.
+        // Follow libtiff's RGBA reader: one color sample is BlackIsZero, three are RGB, and any
+        // other count stays unsupported.
+        let photometric_interpretation = match (photometric_tag, photometric_samples) {
+            (Some(p), _) => p,
+            (None, 1) => PhotometricInterpretation::BlackIsZero,
+            (None, 3) => PhotometricInterpretation::RGB,
+            (None, _) => return Err(TiffUnsupportedError::UnknownInterpretation.into()),
         };
 
         let sample_format = match tag_reader.find_tag_uint_vec(Tag::SampleFormat)? {
