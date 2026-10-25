@@ -1307,7 +1307,7 @@ impl<R: Read + Seek> Decoder<R> {
     /// Utility to create a reader like [`Self::read_entry`], from the current IFD.
     ///
     /// Returns an `Ok(None)` if the tag is not found in the current directory. See
-    /// [`Self::read_entry´] of which this is a simple wrapper.
+    /// [`Self::read_entry`] of which this is a simple wrapper.
     pub fn read_tag(&mut self, tag: Tag) -> TiffResult<Option<EntryBytesReader<'_, R>>> {
         match self.current_ifd().find_entry(tag) {
             None => Ok(None),

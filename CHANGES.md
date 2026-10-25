@@ -14,6 +14,30 @@ Fork sync (2026-10-20):
   `Decoder::image_ifd` stays as a deprecated alias of `current_ifd`, and
   `ColorType::floating_point_predict` has a default body.
 
+Fork fixes (2026-10-24), from an inventory of open upstream issues and PRs
+(details in `docs/UPSTREAM_GAPS.md`):
+- Tiled images with `PlanarConfiguration = 2` no longer panic on the border
+  tiles of the second and later planes (upstream issue 403; issue 395's
+  band-interleaved tiled LZW file takes the same path).
+- Floating-point predictor (3) on tiled images whose width is not a multiple
+  of the tile width: the right-edge tiles decoded wrong samples. The byte
+  planes were split at the clipped width instead of the stored tile width.
+- `expand_chunk`'s two layout assertions return errors instead of panicking.
+- A missing `PhotometricInterpretation` defaults by color sample count, as
+  libtiff's RGBA reader does: one is BlackIsZero, three are RGB (upstream
+  issue 253).
+- Group 3 with two-dimensional coding (`T4Options` bit 0) decodes; it was
+  read as one-dimensional and produced wrong pixels. Modified Huffman
+  (compression 2) decodes (upstream issue 405). Uncompressed mode is reported
+  as unsupported. Verified against 91 libtiff-written files.
+- CCITT images wider than 65,535 pixels decode (`fax` 0.3.0), and Group 4
+  strips that end without EOFB no longer lose their last row.
+- YCbCr chroma subsampling without JPEG compression decodes (upstream PR 388).
+- BigTIFF directories claiming more than 65,535 entries are rejected, as in
+  libtiff.
+- `Decoder::new` reads the first directory with tiff 0.11.3's value limits, so
+  a first image with more than 1 MiB of strip or tile offsets opens again.
+
 Fixes:
 - Decoding a tiled image whose width is not a multiple of the tile width no
   longer corrupts the columns below the right border tiles when extra samples
