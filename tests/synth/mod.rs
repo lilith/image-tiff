@@ -285,8 +285,9 @@ pub mod ccitt {
         }
     }
 
-    fn run(sink: &Sink, black_run: bool, mut n: u16) {
-        let code = |n: u16| {
+    fn run(sink: &Sink, black_run: bool, mut n: u32) {
+        let code = |n: u32| {
+            let n = n as u16;
             if black_run {
                 black::encode(n)
             } else {
@@ -312,7 +313,7 @@ pub mod ccitt {
         let mut x = 0;
         while x < row.len() {
             let n = row[x..].iter().take_while(|&&p| p == color).count();
-            run(sink, color, n as u16);
+            run(sink, color, n as u32);
             x += n;
             color = !color;
         }
@@ -341,7 +342,7 @@ pub mod ccitt {
     /// one-dimensional and the rest are coded against the previous row.
     pub fn group3(rows: &[Vec<bool>], options: u32, k: usize) -> Vec<u8> {
         let sink = Sink::default();
-        let width = rows.first().map_or(0, |r| r.len()) as u16;
+        let width = rows.first().map_or(0, |r| r.len()) as u32;
         let mut encoder = fax34::encoder::Encoder::new(sink.clone());
         for (y, row) in rows.iter().enumerate() {
             if options & 4 != 0 {

@@ -246,9 +246,14 @@ fn ccitt_group3_and_modified_huffman() {
         let rows = ccitt_rows(width, 11, i as u32 + 1);
         for fill_order in [1, 2] {
             for rows_per_strip in [11, 4] {
-                check_ccitt(2, None, fill_order, &rows, rows_per_strip, |r| {
-                    synth::ccitt::modified_huffman(r)
-                });
+                check_ccitt(
+                    2,
+                    None,
+                    fill_order,
+                    &rows,
+                    rows_per_strip,
+                    synth::ccitt::modified_huffman,
+                );
                 for options in [0, 4] {
                     check_ccitt(3, Some(options), fill_order, &rows, rows_per_strip, |r| {
                         synth::ccitt::group3(r, options, 1)
@@ -262,6 +267,31 @@ fn ccitt_group3_and_modified_huffman() {
             }
         }
     }
+}
+
+/// CCITT rows wider than 65,535 pixels (fax 0.3.0 widened its positions to u32).
+#[cfg(feature = "fax")]
+#[test]
+fn ccitt_wider_than_u16() {
+    let rows = ccitt_rows(70_001, 6, 77);
+    check_ccitt(2, None, 1, &rows, 6, synth::ccitt::modified_huffman);
+    check_ccitt(3, Some(0), 1, &rows, 6, |r| synth::ccitt::group3(r, 0, 1));
+    check_ccitt(3, Some(1), 1, &rows, 3, |r| synth::ccitt::group3(r, 1, 2));
+    // Group 4 is Group 3 two-dimensional coding without EOLs or 1D rows.
+    check_ccitt(4, None, 1, &rows, 6, |r| {
+        let mut encoder = fax34::encoder::Encoder::new(fax34::VecWriter::new());
+        for row in r {
+            let pels = row.iter().map(|&b| {
+                if b {
+                    fax34::Color::Black
+                } else {
+                    fax34::Color::White
+                }
+            });
+            encoder.encode_line(pels, row.len() as u32).unwrap();
+        }
+        encoder.finish().unwrap().finish()
+    });
 }
 
 /// Uncompressed mode (T4Options bit 1) is not implemented and must not decode as data.

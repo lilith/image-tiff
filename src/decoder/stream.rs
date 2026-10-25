@@ -294,7 +294,7 @@ pub struct Group4Reader<R: Read> {
     decoder: fax34::decoder::Group4Decoder<FaxBytes<R>>,
     line_buf: io::Cursor<Vec<u8>>,
     height: u32,
-    width: u16,
+    width: u32,
     y: u32,
 }
 
@@ -306,15 +306,14 @@ impl<R: Read> Group4Reader<R> {
         compressed_length: u64,
         fill_order: u16,
     ) -> crate::TiffResult<Self> {
-        let width = u16::try_from(dimensions.0)?;
-        let height = dimensions.1;
+        let (width, height) = dimensions;
 
         Ok(Self {
             decoder: fax34::decoder::Group4Decoder::new(
                 fax_byte_iter(reader, compressed_length, fill_order),
                 width,
             )?,
-            line_buf: io::Cursor::new(Vec::with_capacity(width.into())),
+            line_buf: io::Cursor::new(Vec::with_capacity(usize::try_from(width)?.div_ceil(8))),
             width,
             height,
             y: 0,
@@ -344,7 +343,7 @@ impl<R: Read> Read for Group4Reader<R> {
                     let transitions = fax34::decoder::pels(self.decoder.transition(), self.width);
 
                     let buffer = self.line_buf.get_mut();
-                    buffer.resize(usize::from(self.width).div_ceil(8), 0u8);
+                    buffer.resize((self.width as usize).div_ceil(8), 0u8);
 
                     let target = &mut buffer[..];
 
@@ -422,11 +421,11 @@ pub struct Group3Reader {
     reader: OwnedBitReader,
     line_buf: io::Cursor<Vec<u8>>,
     /// Changing elements of the previous row, the reference for two-dimensional rows.
-    reference: Vec<u16>,
-    current: Vec<u16>,
+    reference: Vec<u32>,
+    current: Vec<u32>,
     scheme: CcittScheme,
     height: u32,
-    width: u16,
+    width: u32,
     y: u32,
 }
 
@@ -440,8 +439,7 @@ impl Group3Reader {
         scheme: CcittScheme,
         limits: &super::Limits,
     ) -> crate::TiffResult<Self> {
-        let width = u16::try_from(dimensions.0)?;
-        let height = dimensions.1;
+        let (width, height) = dimensions;
 
         if let CcittScheme::Group3 { options } = scheme {
             // Uncompressed mode needs the T.4 extension codes, which are not implemented.
@@ -483,7 +481,7 @@ impl Group3Reader {
 
         Ok(Self {
             reader: bit_reader,
-            line_buf: io::Cursor::new(Vec::with_capacity(usize::from(width).div_ceil(8))),
+            line_buf: io::Cursor::new(Vec::with_capacity(usize::try_from(width)?.div_ceil(8))),
             reference: Vec::new(),
             current: Vec::new(),
             scheme,
@@ -528,10 +526,10 @@ impl Group3Reader {
     fn with_markup<R: fax34::BitReader>(
         decoder: fn(&mut R) -> Option<u16>,
         reader: &mut R,
-    ) -> Option<u16> {
-        let mut sum = 0u16;
+    ) -> Option<u32> {
+        let mut sum = 0u32;
         while let Some(n) = decoder(reader) {
-            sum = sum.checked_add(n)?;
+            sum = sum.checked_add(u32::from(n))?;
             if n < 64 {
                 return Some(sum);
             }
@@ -539,7 +537,7 @@ impl Group3Reader {
         None
     }
 
-    fn run(reader: &mut OwnedBitReader, white: bool) -> Option<u16> {
+    fn run(reader: &mut OwnedBitReader, white: bool) -> Option<u32> {
         if white {
             Self::with_markup(fax34::maps::white::decode, reader)
         } else {
@@ -552,7 +550,7 @@ impl Group3Reader {
     /// the row keeps the current color, as in libtiff.
     fn decode_1d(&mut self) {
         let width = self.width;
-        let mut a0 = 0u16;
+        let mut a0 = 0u32;
         let mut white = true;
         while a0 < width {
             let Some(run) = Self::run(&mut self.reader, white) else {
@@ -577,7 +575,7 @@ impl Group3Reader {
         let width = self.width;
         let reference = &self.reference;
         // `a0` is `None` for the imaginary white element before the first pixel.
-        let mut a0: Option<u16> = None;
+        let mut a0: Option<u32> = None;
         let mut white = true;
         loop {
             let start = a0.unwrap_or(0);
@@ -621,12 +619,12 @@ impl Group3Reader {
                     a0 = Some(a2);
                 }
                 Mode::Vertical(delta) => {
-                    let a1 = i32::from(b1) + i32::from(delta);
+                    let a1 = i64::from(b1) + i64::from(delta);
                     // A changing element must lie right of a0 and within the row.
-                    if a1 < 0 || a1 > i32::from(width) || a0.is_some_and(|a0| a1 <= i32::from(a0)) {
+                    if a1 < 0 || a1 > i64::from(width) || a0.is_some_and(|a0| a1 <= i64::from(a0)) {
                         break;
                     }
-                    let a1 = a1 as u16;
+                    let a1 = a1 as u32;
                     if a1 < width {
                         self.current.push(a1);
                     }
@@ -673,7 +671,7 @@ impl Read for Group3Reader {
             self.y += 1;
 
             // Convert transitions to packed bilevel output
-            let bytes_per_line = usize::from(self.width).div_ceil(8);
+            let bytes_per_line = (self.width as usize).div_ceil(8);
             let buffer = self.line_buf.get_mut();
             buffer.clear();
             buffer.resize(bytes_per_line, 0u8);
