@@ -441,3 +441,24 @@ fn custom_codecs_match_built_in_on_fixtures() {
     );
     eprintln!("custom decompressors matched built-in on: {checked:?}");
 }
+
+/// Old-style JPEG (6) decoders upsample YCbCr themselves, as JPEG (7) decoders do: their full
+/// resolution output is not run through the block upsampler.
+#[test]
+fn jpeg_family_custom_output_is_not_upsampled_again() {
+    let (width, height) = (4u32, 4u32);
+    let full: Vec<u8> = (0..width * height * 3).map(|i| (i * 11) as u8).collect();
+    let file = synth::image(width, height, 8, 3, 6)
+        .short(262, &[6])
+        .short(530, &[2, 2])
+        .long(278, &[height])
+        .strips(vec![xor(&full)])
+        .build();
+    let mut decoder = Decoder::open(Cursor::new(file))
+        .unwrap()
+        .with_decompressor(CompressionMethod::JPEG, Arc::new(Xor::default()));
+    decoder.next_image().unwrap();
+    let mut buffer = vec![0u8; full.len()];
+    decoder.read_image_bytes(&mut buffer).unwrap();
+    assert_eq!(buffer, full);
+}

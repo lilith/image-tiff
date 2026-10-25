@@ -164,6 +164,12 @@ pub(crate) struct ReadoutLayout {
     pub chunks_per_plane: u32,
 }
 
+/// JPEG-based compressions, whose decoders upsample YCbCr themselves: old-style JPEG (6),
+/// JPEG (7) and DNG lossy JPEG (34892).
+fn is_jpeg_family(method: CompressionMethod) -> bool {
+    matches!(method.to_u16(), 6 | 7 | 34892)
+}
+
 impl Image {
     pub fn from_reader<R: Read + Seek>(
         decoder: &mut ValueReader<R>,
@@ -1410,7 +1416,7 @@ impl Image {
         // pixel rows. JPEG handles upsampling internally.
         if matches!(color_type, ColorType::YCbCr(_))
             && self.chroma_subsampling != (1, 1)
-            && !matches!(compression_method, CompressionMethod::ModernJPEG)
+            && !is_jpeg_family(compression_method)
         {
             // Blocks cover the chunk as stored: border tiles keep their full width and length,
             // and a strip holds only its own rows.

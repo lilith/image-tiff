@@ -85,8 +85,11 @@ pub trait FileRead {
 /// before any predictor is undone. Multi-byte samples are in the byte order `decompress` returns:
 /// [`ChunkInfo::byte_order`] for byte-stream codecs (LZMA, ...), or [`ByteOrder::native`] for
 /// codecs that decode to samples in memory (JPEG XL, JPEG 2000, LERC, ...). Image codecs produce
-/// the stored color samples without color conversion; YCbCr from JPEG is upsampled to full
-/// resolution, as the built-in JPEG decoder does.
+/// samples in the color space `PhotometricInterpretation` names: YCbCr stays YCbCr, and a JPEG
+/// 2000 tile coded as YCbCr under an RGB photometric (Aperio's 33003) is converted to RGB.
+/// Subsampled YCbCr is upsampled to full resolution by the JPEG-based codecs (old-style JPEG 6,
+/// JPEG 7, DNG lossy JPEG 34892), as the built-in JPEG decoder does; every other codec produces
+/// the stored block layout, which the decoder upsamples.
 ///
 /// Output shorter than `height` rows is reported as an I/O error by the decoder; it is never
 /// padded.
