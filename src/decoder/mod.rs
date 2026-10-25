@@ -19,6 +19,7 @@ mod entry_reader;
 pub mod ifd;
 mod image;
 mod logluv;
+pub mod pluggable;
 mod stream;
 mod tag_reader;
 
@@ -269,6 +270,8 @@ struct ValueReader<R> {
     reader: EndianReader<R>,
     bigtiff: bool,
     limits: Limits,
+    /// Caller-supplied strip/tile decompressors, see [`Decoder::with_decompressor`].
+    decompressors: pluggable::Registry,
 }
 
 /// Reads a directory's tag values from an underlying stream.
@@ -851,6 +854,7 @@ impl TiffHeader {
                 reader,
                 bigtiff: matches!(self.variant, TiffVariant::BigTiff),
                 limits: Default::default(),
+                decompressors: Default::default(),
             },
             ifd_offsets: vec![],
             current_ifd_pointer: None,
@@ -951,6 +955,22 @@ impl<R: Read + Seek> Decoder<R> {
     /// the decoder returned form [`Self::current_ifd`].
     pub fn with_limits(mut self, limits: Limits) -> Decoder<R> {
         self.value_reader.limits = limits;
+        self
+    }
+
+    /// Decode strips and tiles with this compression method using `decompressor`.
+    ///
+    /// The decompressor takes the place of the built-in codec for that method, or adds one where
+    /// none exists (for example LERC, LZMA, JPEG XL or JPEG 2000). Only decompression is replaced:
+    /// predictors, byte order, bit unpacking and the rest of the pipeline still run on its output.
+    /// See [`pluggable::ChunkDecompressor`] for the output it must produce. Registering a method
+    /// again replaces the previous decompressor.
+    pub fn with_decompressor(
+        mut self,
+        method: crate::tags::CompressionMethod,
+        decompressor: std::sync::Arc<dyn pluggable::ChunkDecompressor>,
+    ) -> Decoder<R> {
+        self.value_reader.decompressors.set(method, decompressor);
         self
     }
 
@@ -1106,6 +1126,7 @@ impl<R: Read + Seek> Decoder<R> {
                 reader: EndianReader::new(reader, self.value_reader.reader.byte_order),
                 bigtiff: self.value_reader.bigtiff,
                 limits: core::mem::take(&mut self.value_reader.limits),
+                decompressors: core::mem::take(&mut self.value_reader.decompressors),
             },
             ifd_offsets: self.ifd_offsets.clone(),
             seen_ifds: self.seen_ifds.clone(),

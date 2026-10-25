@@ -1135,6 +1135,7 @@ impl Image {
             reader,
             bigtiff: _,
             limits,
+            decompressors,
         } = reader;
 
         let decompressed_byte_order = if self.decompression_to_host_endian {
@@ -1305,17 +1306,52 @@ impl Image {
         let is_all_bits = samples == data_samples;
         let is_output_chunk_rows = layout.row_stride == chunk_row_bytes;
 
-        let mut reader: Box<dyn Read> = Self::create_reader(
-            reader.inner(),
-            compression_method,
-            *compressed_bytes,
-            self.jpeg_tables.as_deref().map(|a| &**a),
-            chunk_dims,
-            self.samples,
-            self.fill_order,
-            self.t4_options,
-            limits,
-        )?;
+        let mut reader: Box<dyn Read> = match decompressors.get(compression_method) {
+            Some(decompressor) => {
+                // `compressed_bytes` was bounded by `intermediate_buffer_size` above.
+                let mut compressed = Vec::with_capacity(usize::try_from(*compressed_bytes)?);
+                reader
+                    .inner()
+                    .take(*compressed_bytes)
+                    .read_to_end(&mut compressed)?;
+                let height = match self.chunk_type {
+                    ChunkType::Strip => data_dims.1,
+                    ChunkType::Tile => chunk_dims.1,
+                };
+                let max_output_len = chunk_row_bytes
+                    .checked_mul(height as usize)
+                    .ok_or(TiffError::LimitsExceeded)?;
+                let info = super::pluggable::ChunkInfo {
+                    compression: compression_method,
+                    width: chunk_dims.0,
+                    height,
+                    samples: layout.tiff_samples,
+                    bits_per_sample: u16::from(self.bits_per_sample),
+                    sample_format: self.sample_format,
+                    photometric: photometric_interpretation,
+                    little_endian: reader.byte_order == ByteOrder::LittleEndian,
+                    jpeg_tables: self.jpeg_tables.as_deref().map(|a| &**a),
+                    max_output_len,
+                };
+                let mut output = Vec::new();
+                decompressor.decompress(&compressed, &info, &mut output)?;
+                if output.len() > max_output_len {
+                    return Err(TiffError::LimitsExceeded);
+                }
+                Box::new(Cursor::new(output))
+            }
+            None => Self::create_reader(
+                reader.inner(),
+                compression_method,
+                *compressed_bytes,
+                self.jpeg_tables.as_deref().map(|a| &**a),
+                chunk_dims,
+                self.samples,
+                self.fill_order,
+                self.t4_options,
+                limits,
+            )?,
+        };
 
         // For non-JPEG YCbCr with chroma subsampling, wrap the decompressor in an
         // upsampling reader that converts the subsampled block layout to full-resolution
