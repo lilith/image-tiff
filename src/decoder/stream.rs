@@ -433,6 +433,9 @@ pub struct Group3Reader {
     reference: Vec<u32>,
     current: Vec<u32>,
     scheme: CcittScheme,
+    /// Whether the Group 3 rows are preceded by EOL codes. Some writers omit them; like
+    /// libtiff, rows are then decoded back to back.
+    eol: bool,
     height: u32,
     width: u32,
     y: u32,
@@ -482,6 +485,7 @@ impl Group3Reader {
         // The code tables peek a fixed number of bits, and `ByteReader::peek` returns `None`
         // when fewer remain, so a code in the last bits of the data would not decode. Two zero
         // bytes cover the widest peek; zero bits are EOL fill and complete no code.
+        let eol = Self::contains_eol(&compressed);
         compressed.extend_from_slice(&[0, 0]);
 
         // Create an owning bit reader (Vec consumed by into_iter, no borrow issues)
@@ -494,6 +498,7 @@ impl Group3Reader {
             reference: Vec::new(),
             current: Vec::new(),
             scheme,
+            eol,
             width,
             height,
             y: 0,
@@ -522,6 +527,29 @@ impl Group3Reader {
             let _ = reader.consume(1);
         }
         true
+    }
+
+    /// Whether the data holds an EOL code: eleven zero bits in a row. No run of codes without
+    /// EOLs produces that many, so its absence means the writer left the EOLs out. libtiff
+    /// finds the same when its EOL search reaches the end of the strip, and then decodes the
+    /// strip again without EOLs.
+    fn contains_eol(data: &[u8]) -> bool {
+        let mut zeros = 0u32;
+        for &byte in data {
+            if byte == 0 {
+                zeros += 8;
+            } else {
+                zeros += byte.leading_zeros();
+                if zeros >= 11 {
+                    return true;
+                }
+                zeros = byte.trailing_zeros();
+            }
+            if zeros >= 11 {
+                return true;
+            }
+        }
+        false
     }
 
     fn skip_to_byte_boundary(reader: &mut OwnedBitReader) {
@@ -661,7 +689,9 @@ impl Read for Group3Reader {
                 CcittScheme::Group3 { options } => {
                     // Every row is preceded by an EOL; with two-dimensional coding a tag bit
                     // follows it: 1 for a one-dimensional row, 0 for a two-dimensional row.
-                    Self::sync_eol(&mut self.reader);
+                    if self.eol {
+                        Self::sync_eol(&mut self.reader);
+                    }
                     let two_dimensional = options & 1 != 0
                         && match self.reader.peek(1) {
                             Some(bit) => {

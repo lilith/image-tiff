@@ -309,6 +309,24 @@ fn ccitt_group4_without_eofb() {
     }
 }
 
+/// Group 3 data without EOL codes (libtiff's testfax3_bug54_1dnoEOL.tif is such a file):
+/// rows are decoded back to back, as libtiff does when it finds no EOL in a strip.
+#[cfg(feature = "fax")]
+#[test]
+fn ccitt_group3_without_eol() {
+    for (i, &width) in [13usize, 300, 1728].iter().enumerate() {
+        let rows = ccitt_rows(width, 11, 40 + i as u32);
+        for rows_per_strip in [11, 4] {
+            check_ccitt(3, Some(0), 1, &rows, rows_per_strip, |r| {
+                synth::ccitt::group3_without_eol(r, 0, 1)
+            });
+            check_ccitt(3, Some(1), 1, &rows, rows_per_strip, |r| {
+                synth::ccitt::group3_without_eol(r, 1, 2)
+            });
+        }
+    }
+}
+
 /// Uncompressed mode (T4Options bit 1) is not implemented and must not decode as data.
 #[cfg(feature = "fax")]
 #[test]
@@ -450,4 +468,33 @@ fn ycbcr_subsampled_border_tiles() {
         })
         .collect();
     assert_eq!(decode_all_planes(file), expected);
+}
+
+/// Chunks with no stored bytes (GDAL's sparse tiles and strips) decode as stored samples of 0,
+/// as in GDAL and tifffile, instead of reading whatever follows their offset.
+#[test]
+fn sparse_chunks_decode_as_zero() {
+    // Two 16x16 tiles; the first is absent, so its offset points at the second tile's bytes.
+    let file = synth::image(32, 16, 8, 1, 1)
+        .short(262, &[1])
+        .short(322, &[16])
+        .short(323, &[16])
+        .tiles(vec![vec![], vec![7u8; 256]])
+        .build();
+    let decoded = decode_all_planes(file);
+    for (i, row) in decoded.chunks(32).enumerate() {
+        assert_eq!(&row[..16], &[0u8; 16], "row {i}");
+        assert_eq!(&row[16..], &[7u8; 16], "row {i}");
+    }
+
+    // Three strips of two rows, the middle one absent.
+    let file = synth::image(4, 6, 8, 1, 1)
+        .short(262, &[1])
+        .long(278, &[2])
+        .strips(vec![vec![1; 8], vec![], vec![3; 8]])
+        .build();
+    assert_eq!(
+        decode_all_planes(file),
+        [vec![1u8; 8], vec![0; 8], vec![3; 8]].concat()
+    );
 }

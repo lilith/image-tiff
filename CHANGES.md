@@ -30,9 +30,15 @@ Fork fixes (2026-10-24), from an inventory of open upstream issues and PRs
   read as one-dimensional and produced wrong pixels. Modified Huffman
   (compression 2) decodes (upstream issue 405). Uncompressed mode is reported
   as unsupported. Verified against 91 libtiff-written files.
+- Group 3 strips without EOL codes decode, rows back to back, as libtiff does
+  when it finds no EOL in a strip (libtiff's testfax3_bug54_1dnoEOL.tif had
+  5.7% of its pixels wrong).
 - CCITT images wider than 65,535 pixels decode (`fax` 0.3.0), and Group 4
   strips that end without EOFB no longer lose their last row.
 - YCbCr chroma subsampling without JPEG compression decodes (upstream PR 388).
+- Chunks with no stored bytes (GDAL's sparse tiles and strips) decode as
+  stored samples of 0, as GDAL and tifffile do; they decoded the bytes at
+  their offset.
 - BigTIFF directories claiming more than 65,535 entries are rejected, as in
   libtiff.
 - `Decoder::new` reads the first directory with tiff 0.11.3's value limits, so
@@ -40,10 +46,12 @@ Fork fixes (2026-10-24), from an inventory of open upstream issues and PRs
 
 Fork additions:
 - `Decoder::with_decompressor` and `decoder::pluggable::{ChunkDecompressor,
-  ChunkInfo}`: caller-supplied strip/tile decompressors that replace or add a
-  compression method. Only decompression is replaced; predictor, byte order,
-  unpacking and photometric steps still run on the output. Short output is an
-  error, never padded.
+  ChunkInfo, FileRead}`: caller-supplied strip/tile decompressors that replace
+  or add a compression method. Only decompression is replaced; predictor,
+  byte order, unpacking and photometric steps still run on the output. A
+  decompressor can request tag values, read at file offsets, learn the
+  chunk's index, plane and position, and return samples in file or native
+  byte order. Short output is an error, never padded.
 
 Fixes:
 - Decoding a tiled image whose width is not a multiple of the tile width no

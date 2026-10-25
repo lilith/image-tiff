@@ -94,6 +94,8 @@ pub(crate) struct Image {
     pub fill_order: u16,
     /// `T4Options` (292) for Group 3 compression, 0 when absent.
     pub t4_options: u32,
+    /// Values of the tags a registered decompressor asked for (`ChunkDecompressor::tags`).
+    pub custom_tags: Vec<(Tag, Value)>,
     /// The color map (palette) for `PhotometricInterpretation::RGBPalette`.
     /// Contains `3 * 2^BitsPerSample` u16 entries: R values, then G values, then B values.
     pub color_map: Option<Vec<u16>>,
@@ -344,6 +346,20 @@ impl Image {
 
         // T4Options (292) only matters for Group 3; it is read through its number because
         // `Tag` has no named variant for it.
+        // Tags a registered decompressor for this compression asks for.
+        let requested = tag_reader
+            .decoder
+            .decompressors
+            .get(compression_method)
+            .map(|d| d.tags().to_vec())
+            .unwrap_or_default();
+        let mut custom_tags = Vec::new();
+        for tag in requested {
+            if let Some(value) = tag_reader.find_tag(tag)? {
+                custom_tags.push((tag, value));
+            }
+        }
+
         let t4_options = if compression_method == CompressionMethod::Fax3 {
             tag_reader
                 .find_tag(Tag::Unknown(292))?
@@ -534,6 +550,7 @@ impl Image {
             chroma_subsampling,
             fill_order,
             t4_options,
+            custom_tags,
             color_map,
             decompression_to_host_endian: matches!(
                 compression_method,
@@ -1091,6 +1108,25 @@ impl Image {
         })
     }
 
+    /// Plane and image position (column, row) of a chunk's first pixel.
+    fn chunk_position(&self, chunk_index: u32) -> TiffResult<(u16, u32, u32)> {
+        let dims = self.chunk_dimensions()?;
+        let (per_plane, across) = match self.chunk_type {
+            ChunkType::Strip => (self.height.div_ceil(dims.1.max(1)), 1),
+            ChunkType::Tile => {
+                let tiles = self.tile_attributes.as_ref().unwrap();
+                (
+                    u32::try_from(tiles.tiles_across() * tiles.tiles_down())?,
+                    u32::try_from(tiles.tiles_across())?,
+                )
+            }
+        };
+        let per_plane = per_plane.max(1);
+        let plane = u16::try_from(chunk_index / per_plane)?;
+        let index = chunk_index % per_plane;
+        Ok((plane, (index % across) * dims.0, (index / across) * dims.1))
+    }
+
     pub(crate) fn chunk_data_dimensions(&self, chunk_index: u32) -> TiffResult<(u32, u32)> {
         let dims = self.chunk_dimensions()?;
 
@@ -1138,7 +1174,7 @@ impl Image {
             decompressors,
         } = reader;
 
-        let decompressed_byte_order = if self.decompression_to_host_endian {
+        let mut decompressed_byte_order = if self.decompression_to_host_endian {
             ByteOrder::native()
         } else {
             // Convert from the byte order of the file.
@@ -1306,41 +1342,57 @@ impl Image {
         let is_all_bits = samples == data_samples;
         let is_output_chunk_rows = layout.row_stride == chunk_row_bytes;
 
-        let mut reader: Box<dyn Read> = match decompressors.get(compression_method) {
-            Some(decompressor) => {
-                // `compressed_bytes` was bounded by `intermediate_buffer_size` above.
-                let mut compressed = Vec::with_capacity(usize::try_from(*compressed_bytes)?);
-                reader
-                    .inner()
-                    .take(*compressed_bytes)
-                    .read_to_end(&mut compressed)?;
-                let height = match self.chunk_type {
-                    ChunkType::Strip => data_dims.1,
-                    ChunkType::Tile => chunk_dims.1,
-                };
-                let max_output_len = chunk_row_bytes
-                    .checked_mul(height as usize)
-                    .ok_or(TiffError::LimitsExceeded)?;
-                let info = super::pluggable::ChunkInfo {
-                    compression: compression_method,
-                    width: chunk_dims.0,
-                    height,
-                    samples: layout.tiff_samples,
-                    bits_per_sample: u16::from(self.bits_per_sample),
-                    sample_format: self.sample_format,
-                    photometric: photometric_interpretation,
-                    little_endian: reader.byte_order == ByteOrder::LittleEndian,
-                    jpeg_tables: self.jpeg_tables.as_deref().map(|a| &**a),
-                    max_output_len,
-                };
-                let mut output = Vec::new();
-                decompressor.decompress(&compressed, &info, &mut output)?;
-                if output.len() > max_output_len {
-                    return Err(TiffError::LimitsExceeded);
-                }
-                Box::new(Cursor::new(output))
+        let stored_rows = match self.chunk_type {
+            ChunkType::Strip => data_dims.1,
+            ChunkType::Tile => chunk_dims.1,
+        };
+        let stored_len = chunk_row_bytes
+            .checked_mul(stored_rows as usize)
+            .ok_or(TiffError::LimitsExceeded)?;
+        // A chunk with no stored bytes is absent (GDAL writes such sparse tiles and strips with
+        // offset and byte count 0). Like GDAL and tifffile, decode it as stored samples of 0;
+        // reading it as data would decode whatever bytes sit at its offset.
+        let mut reader: Box<dyn Read> = if *compressed_bytes == 0 {
+            Box::new(io::repeat(0).take(stored_len as u64))
+        } else if let Some(decompressor) = decompressors.get(compression_method) {
+            // `compressed_bytes` was bounded by `intermediate_buffer_size` above.
+            let mut compressed = Vec::with_capacity(usize::try_from(*compressed_bytes)?);
+            reader
+                .inner()
+                .take(*compressed_bytes)
+                .read_to_end(&mut compressed)?;
+            let (plane, x, y) = self.chunk_position(chunk_index)?;
+            let info = super::pluggable::ChunkInfo {
+                compression: compression_method,
+                width: chunk_dims.0,
+                height: stored_rows,
+                samples: layout.tiff_samples,
+                bits_per_sample: u16::from(self.bits_per_sample),
+                sample_format: self.sample_format,
+                photometric: photometric_interpretation,
+                byte_order: reader.byte_order,
+                fill_order: self.fill_order,
+                jpeg_tables: self.jpeg_tables.as_deref().map(|a| &**a),
+                tags: &self.custom_tags,
+                chunk_index,
+                plane,
+                x,
+                y,
+                max_output_len: stored_len,
+            };
+            let mut file = super::pluggable::BoundedFile {
+                reader: reader.inner(),
+                max_len: limits.intermediate_buffer_size,
+            };
+            let mut output = Vec::new();
+            decompressed_byte_order =
+                decompressor.decompress(&compressed, &info, &mut file, &mut output)?;
+            if output.len() > stored_len {
+                return Err(TiffError::LimitsExceeded);
             }
-            None => Self::create_reader(
+            Box::new(Cursor::new(output))
+        } else {
+            Self::create_reader(
                 reader.inner(),
                 compression_method,
                 *compressed_bytes,
@@ -1350,7 +1402,7 @@ impl Image {
                 self.fill_order,
                 self.t4_options,
                 limits,
-            )?,
+            )?
         };
 
         // For non-JPEG YCbCr with chroma subsampling, wrap the decompressor in an
@@ -1362,10 +1414,6 @@ impl Image {
         {
             // Blocks cover the chunk as stored: border tiles keep their full width and length,
             // and a strip holds only its own rows.
-            let stored_rows = match self.chunk_type {
-                ChunkType::Strip => data_dims.1,
-                ChunkType::Tile => chunk_dims.1,
-            };
             reader = Box::new(super::stream::YCbCrUpsamplingReader::new(
                 reader,
                 (chunk_dims.0, stored_rows),

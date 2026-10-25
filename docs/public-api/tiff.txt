@@ -6,16 +6,16 @@
 # impls omitted; re-export duplicates annotated `[also: path]`.
 # DO NOT EDIT BY HAND — commit regenerated changes with the code.
 #
-# files: tiff.txt 728 lines (supported surface) | tiff.features.txt 0 added (features: deflate,fax,jpeg,lzw,webp,zstd,zstd-safe-rust) | tiff.internal.txt 58 lines (58 hidden + 0 excluded-feature)
+# files: tiff.txt 738 lines (supported surface) | tiff.features.txt 0 added (features: deflate,fax,jpeg,lzw,webp,zstd,zstd-safe-rust) | tiff.internal.txt 58 lines (58 hidden + 0 excluded-feature)
 
 ## summary
 #
 #   pub modules                                 8
-#   pub types (struct/enum/trait/alias)        94
+#   pub types (struct/enum/trait/alias)        95
 #   pub consts/statics                         31
 #   free functions                              4
-#   inherent methods                          181
-#   struct fields                              39
+#   inherent methods                          184
+#   struct fields                              45
 #   enum variants                             250
 #   trait roster entries (type × trait)       275
 #   conditional trait impls (verbatim)          7
@@ -24,11 +24,11 @@
 #
 # per-module pub lines:
 #   (root)                          123
-#   decoder                         209
+#   decoder                         219
 #   encoder                         128
 #   tags                            147
 
-## items (607 lines)
+## items (617 lines)
 
 pub mod tiff
 pub mod decoder
@@ -81,17 +81,27 @@ pub fn decoder::ifd::Entry::new_u64(tags::Type, u64, [u8; 8]) -> decoder::ifd::E
 pub mod decoder::pluggable
 #[non_exhaustive] pub struct decoder::pluggable::ChunkInfo<'a>
 pub decoder::pluggable::ChunkInfo::bits_per_sample: u16
+pub decoder::pluggable::ChunkInfo::byte_order: tags::ByteOrder
+pub decoder::pluggable::ChunkInfo::chunk_index: u32
 pub decoder::pluggable::ChunkInfo::compression: tags::CompressionMethod
+pub decoder::pluggable::ChunkInfo::fill_order: u16
 pub decoder::pluggable::ChunkInfo::height: u32
 pub decoder::pluggable::ChunkInfo::jpeg_tables: core::option::Option<&'a [u8]>
-pub decoder::pluggable::ChunkInfo::little_endian: bool
 pub decoder::pluggable::ChunkInfo::max_output_len: usize
 pub decoder::pluggable::ChunkInfo::photometric: tags::PhotometricInterpretation
+pub decoder::pluggable::ChunkInfo::plane: u16
 pub decoder::pluggable::ChunkInfo::sample_format: tags::SampleFormat
 pub decoder::pluggable::ChunkInfo::samples: u16
+pub decoder::pluggable::ChunkInfo::tags: &'a [(tags::Tag, decoder::ifd::Value)]
 pub decoder::pluggable::ChunkInfo::width: u32
+pub decoder::pluggable::ChunkInfo::x: u32
+pub decoder::pluggable::ChunkInfo::y: u32
+pub fn decoder::pluggable::ChunkInfo<'_>::tag(&self, tags::Tag) -> core::option::Option<&decoder::ifd::Value>
 pub trait decoder::pluggable::ChunkDecompressor: core::marker::Send + core::marker::Sync
-pub fn decoder::pluggable::ChunkDecompressor::decompress(&self, &[u8], &decoder::pluggable::ChunkInfo<'_>, &mut alloc::vec::Vec<u8>) -> TiffResult<()>
+pub fn decoder::pluggable::ChunkDecompressor::decompress(&self, &[u8], &decoder::pluggable::ChunkInfo<'_>, &mut dyn decoder::pluggable::FileRead, &mut alloc::vec::Vec<u8>) -> TiffResult<tags::ByteOrder>
+pub fn decoder::pluggable::ChunkDecompressor::tags(&self) -> &[tags::Tag]
+pub trait decoder::pluggable::FileRead
+pub fn decoder::pluggable::FileRead::read_at(&mut self, u64, usize) -> TiffResult<alloc::vec::Vec<u8>>
 pub enum decoder::ChunkType
 pub decoder::ChunkType::Strip
 pub decoder::ChunkType::Tile
