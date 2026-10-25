@@ -15,6 +15,7 @@ says what the decoded output was compared against.
 | 253 | Missing `PhotometricInterpretation` rejected | Fixed (`a528ec13`): 1 color sample is BlackIsZero, 3 are RGB (libtiff RGBA reader, GDAL) | Yes: GeoTIFFs without the tag | `missing_photometric_interpretation` |
 | 405a | CCITT Modified Huffman (compression 2) unsupported | Fixed (`19ab3adb`) | Yes | 91 libtiff-written CCITT files match; `ccitt_group3_and_modified_huffman` |
 | — | Group 3 2D (`T4Options` bit 0) decoded as 1D, wrong pixels | Fixed (`19ab3adb`) | Yes | same |
+| — | Group 3 without EOL codes (libtiff's testfax3_bug54_1dnoEOL.tif) decoded 5.7% of pixels wrong | Fixed: rows decode back to back when a strip holds no EOL, as libtiff does | Yes | `ccitt_group3_without_eol`; the file now matches libtiff |
 | — | CCITT wider than 65,535 pixels; G4 strips without EOFB lost their last row | Fixed (`3862a009`, `45c4dd80`) | Yes | `ccitt_wider_than_u16`, `ccitt_group4_without_eofb` |
 | — | Tiled YCbCr with chroma subsampling failed on border tiles (the upsampler got the clipped width) | Fixed | Yes | `ycbcr_subsampled_border_tiles` |
 | 405b | Pure-Rust zstd for wasm | Already in the fork: `zstd-safe-rust` (zrip-decode) | Yes (wasm builds) | — |

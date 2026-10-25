@@ -309,6 +309,24 @@ fn ccitt_group4_without_eofb() {
     }
 }
 
+/// Group 3 data without EOL codes (libtiff's testfax3_bug54_1dnoEOL.tif is such a file):
+/// rows are decoded back to back, as libtiff does when it finds no EOL in a strip.
+#[cfg(feature = "fax")]
+#[test]
+fn ccitt_group3_without_eol() {
+    for (i, &width) in [13usize, 300, 1728].iter().enumerate() {
+        let rows = ccitt_rows(width, 11, 40 + i as u32);
+        for rows_per_strip in [11, 4] {
+            check_ccitt(3, Some(0), 1, &rows, rows_per_strip, |r| {
+                synth::ccitt::group3_without_eol(r, 0, 1)
+            });
+            check_ccitt(3, Some(1), 1, &rows, rows_per_strip, |r| {
+                synth::ccitt::group3_without_eol(r, 1, 2)
+            });
+        }
+    }
+}
+
 /// Uncompressed mode (T4Options bit 1) is not implemented and must not decode as data.
 #[cfg(feature = "fax")]
 #[test]

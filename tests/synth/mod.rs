@@ -341,16 +341,28 @@ pub mod ccitt {
     /// Group 3 with the given T4Options. With two-dimensional coding, every `k`-th row is
     /// one-dimensional and the rest are coded against the previous row.
     pub fn group3(rows: &[Vec<bool>], options: u32, k: usize) -> Vec<u8> {
+        group3_rows(rows, options, k, true)
+    }
+
+    /// Group 3 without EOL codes, as some writers produce: rows back to back, with the 1D/2D
+    /// tag bit still in front of each row when two-dimensional coding is on.
+    pub fn group3_without_eol(rows: &[Vec<bool>], options: u32, k: usize) -> Vec<u8> {
+        group3_rows(rows, options, k, false)
+    }
+
+    fn group3_rows(rows: &[Vec<bool>], options: u32, k: usize, eol: bool) -> Vec<u8> {
         let sink = Sink::default();
         let width = rows.first().map_or(0, |r| r.len()) as u32;
         let mut encoder = fax34::encoder::Encoder::new(sink.clone());
         for (y, row) in rows.iter().enumerate() {
-            if options & 4 != 0 {
-                while (sink.len() + 12) % 8 != 0 {
-                    sink.put(0, 1);
+            if eol {
+                if options & 4 != 0 {
+                    while (sink.len() + 12) % 8 != 0 {
+                        sink.put(0, 1);
+                    }
                 }
+                sink.put(1, 12);
             }
-            sink.put(1, 12);
             let one_dimensional = options & 1 == 0 || y % k == 0;
             if options & 1 != 0 {
                 sink.put(u16::from(one_dimensional), 1);
