@@ -1227,9 +1227,31 @@ impl Image {
             return Err(TiffError::LimitsExceeded);
         }
 
-        // TODO: Should these return errors instead?
-        assert!(layout.minimum_row_stride >= data_row_bytes);
-        assert!(buf.len() >= layout.row_stride * (data_dims.1 as usize - 1) + data_row_bytes);
+        // A chunk whose data does not fit the readout layout means the layout and the chunk
+        // geometry disagree; report it instead of panicking on malformed or unexpected input.
+        if layout.minimum_row_stride < data_row_bytes {
+            return Err(TiffError::UsageError(
+                UsageError::InsufficientOutputRowStride {
+                    needed: data_row_bytes,
+                    requested: layout.minimum_row_stride,
+                },
+            ));
+        }
+        let needed = match (data_dims.1 as usize).checked_sub(1) {
+            None => 0,
+            Some(rows) => rows
+                .checked_mul(layout.row_stride)
+                .and_then(|n| n.checked_add(data_row_bytes))
+                .ok_or(TiffError::LimitsExceeded)?,
+        };
+        if buf.len() < needed {
+            return Err(TiffError::UsageError(
+                UsageError::InsufficientOutputBufferSize {
+                    needed,
+                    provided: buf.len(),
+                },
+            ));
+        }
 
         let is_all_bits = samples == data_samples;
         let is_output_chunk_rows = layout.row_stride == chunk_row_bytes;
