@@ -1037,3 +1037,107 @@ fn old_style_jpeg() {
         }
     }
 }
+
+/// PixarLog's companding curve, re-derived from libtiff's PixarLogMakeTables.
+#[cfg(feature = "deflate")]
+fn pixarlog_linear(token: u16) -> f32 {
+    let nlin = (1.0 / 1.004f64.ln()) as i32;
+    let c = 1.0 / f64::from(nlin);
+    let b = (-c * 1250.0).exp();
+    let linstep = b * c * std::f64::consts::E;
+    if i32::from(token) < nlin {
+        (f64::from(token) * linstep) as f32
+    } else {
+        (b * (c * f64::from(token)).exp()) as f32
+    }
+}
+
+/// PixarLog (32909): zlib-compressed 11-bit log tokens, 16 bits each in the file's byte order,
+/// differenced along each row a pixel apart, read as 8-bit, 16-bit or float samples. Checked
+/// against libtiff 4.7.2 on the parity matrix.
+#[test]
+#[cfg(feature = "deflate")]
+fn pixarlog() {
+    let (width, height) = (13usize, 6usize);
+    for samples in [1usize, 3, 4] {
+        let tokens: Vec<u16> = (0..width * height * samples)
+            .map(|i| ((i * 211 + i / samples * 37) % 2048) as u16)
+            .collect();
+        let strips: Vec<Vec<u8>> = tokens
+            .chunks(width * samples * 4)
+            .map(|rows| {
+                let differenced: Vec<u8> = rows
+                    .chunks(width * samples)
+                    .flat_map(|row| {
+                        (0..row.len()).map(move |i| {
+                            if i < samples {
+                                row[i]
+                            } else {
+                                row[i].wrapping_sub(row[i - samples]).wrapping_add(4096)
+                            }
+                        })
+                    })
+                    .flat_map(u16::to_le_bytes)
+                    .collect();
+                synth::deflate(&differenced)
+            })
+            .collect();
+        let photometric = if samples == 1 { 1 } else { 2 };
+        let file = |bits: u16, format: u16| {
+            let file = synth::image(width as u32, height as u32, bits, samples as u16, 32909)
+                .short(262, &[photometric])
+                .short(339, &vec![format; samples])
+                .long(278, &[4]);
+            let file = if samples == 4 {
+                file.short(338, &[2])
+            } else {
+                file
+            };
+            file.strips(strips.clone()).build()
+        };
+
+        let linear: Vec<f32> = tokens.iter().map(|&t| pixarlog_linear(t)).collect();
+        let to_int = |v: f32, max: f64| {
+            let v = f64::from(v) * max + 0.5;
+            if v > max {
+                max
+            } else {
+                v.trunc()
+            }
+        };
+        let expected8: Vec<u8> = linear.iter().map(|&v| to_int(v, 255.0) as u8).collect();
+        assert_eq!(
+            decode_all_planes(file(8, 1)),
+            expected8,
+            "8-bit, {samples} samples"
+        );
+        let expected16: Vec<u8> = linear
+            .iter()
+            .flat_map(|&v| (to_int(v, 65535.0) as u16).to_ne_bytes())
+            .collect();
+        assert_eq!(
+            decode_all_planes(file(16, 1)),
+            expected16,
+            "16-bit, {samples} samples"
+        );
+        let expected32: Vec<u8> = linear.iter().flat_map(|v| v.to_ne_bytes()).collect();
+        assert_eq!(
+            decode_all_planes(file(32, 3)),
+            expected32,
+            "float, {samples} samples"
+        );
+    }
+
+    // Anchors: token 0 is black, 1250 is 1.0, the top of the curve clamps.
+    let tokens = [0u16, 1250, 2047];
+    let file = synth::image(3, 1, 8, 1, 32909)
+        .short(262, &[1])
+        .strips(vec![synth::deflate(
+            &[tokens[0], tokens[1] - tokens[0], tokens[2] - tokens[1]]
+                .iter()
+                .flat_map(|t| t.to_le_bytes())
+                .collect::<Vec<u8>>(),
+        )])
+        .build();
+    assert_eq!(decode_all_planes(file), [0, 255, 255]);
+}

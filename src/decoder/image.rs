@@ -1470,6 +1470,35 @@ impl Image {
             // LERC decodes to samples in memory.
             decompressed_byte_order = ByteOrder::native();
             Box::new(Cursor::new(super::lerc_decode::decode(compressed, &chunk)?))
+        } else if compression_method.to_u16() == 32909 {
+            #[cfg(not(feature = "deflate"))]
+            return Err(TiffError::UnsupportedError(
+                TiffUnsupportedError::UnsupportedCompressionMethod(compression_method),
+            ));
+            #[cfg(feature = "deflate")]
+            {
+                // `compressed_bytes` was bounded by `intermediate_buffer_size` above.
+                let mut compressed = Vec::with_capacity(usize::try_from(*compressed_bytes)?);
+                reader
+                    .inner()
+                    .take(*compressed_bytes)
+                    .read_to_end(&mut compressed)?;
+                let chunk = super::pixarlog::PixarLogChunk {
+                    byte_order: reader.byte_order,
+                    stride: usize::from(layout.tiff_samples),
+                    width: chunk_dims.0 as usize,
+                    rows: stored_rows as usize,
+                    bits_per_sample: self.bits_per_sample,
+                    sample_format: self.sample_format,
+                };
+                // PixarLog decodes to samples in memory.
+                decompressed_byte_order = ByteOrder::native();
+                Box::new(Cursor::new(super::pixarlog::decode(
+                    &compressed,
+                    &chunk,
+                    limits.intermediate_buffer_size,
+                )?))
+            }
         } else if compression_method == CompressionMethod::JPEG {
             self.old_jpeg_chunk(
                 reader,

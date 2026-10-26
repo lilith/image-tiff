@@ -22,6 +22,8 @@ mod lerc_decode;
 mod logluv;
 #[cfg(feature = "jpeg")]
 mod ojpeg;
+#[cfg(feature = "deflate")]
+mod pixarlog;
 mod stream;
 mod tag_reader;
 
