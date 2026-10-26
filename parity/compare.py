@@ -235,10 +235,15 @@ def jpeg_diff(lt, lt_raw, f_arr, kind):
         rgb[..., 1::3] = y - 0.344136 * cb - 0.714136 * cr
         rgb[..., 2::3] = y + 1.772 * cb
         f = np.clip(np.rint(rgb), 0, 255)
+    note = ""
+    if f.shape != l_arr.shape and f.shape[0] < l_arr.shape[0] and f.shape[1:] == l_arr.shape[1:]:
+        # Planar: the fork returns the photometric (and alpha) planes, not unspecified extras.
+        note = f"; fork keeps {f.shape[0]} of {l_arr.shape[0]} planes"
+        l_arr = l_arr[: f.shape[0]]
     if f.shape != l_arr.shape:
         return f"shape fork {f.shape} libtiff {l_arr.shape}"
     d = np.abs(f - l_arr)
-    return f"max |d| {d.max():.0f}, {int((d > 0).sum())} of {d.size} samples differ"
+    return f"max |d| {d.max():.0f}, {int((d > 0).sum())} of {d.size} samples differ{note}"
 
 
 def xyz_to_rgb_bits(arr):
