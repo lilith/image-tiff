@@ -74,6 +74,8 @@ tiles and planar layouts):
   identically.
 - NeXT (32766) 2-bit gray decodes.
 - ThunderScan (32809) 4-bit decodes (`6d2cc3c2`).
+- SGILog tiles at the right border of an image decode; they were left 0
+  because the row-based SGILog readers were read in partial rows.
 - The horizontal and floating-point predictors are undone before discarded
   extra samples are dropped (`31ea3376`); they were undone on the compacted
   row, which gave wrong samples for e.g. RGB + unspecified extra sample.
