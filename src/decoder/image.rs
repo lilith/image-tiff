@@ -1479,6 +1479,24 @@ impl Image {
             // LERC decodes to samples in memory.
             decompressed_byte_order = ByteOrder::native();
             Box::new(Cursor::new(super::lerc_decode::decode(compressed, &chunk)?))
+        } else if compression_method.to_u16() == 32766 {
+            if self.bits_per_sample != 2 {
+                return Err(TiffError::UnsupportedError(
+                    TiffUnsupportedError::UnsupportedBitsPerChannel(self.bits_per_sample),
+                ));
+            }
+            // `compressed_bytes` was bounded by `intermediate_buffer_size` above.
+            let mut compressed = Vec::with_capacity(usize::try_from(*compressed_bytes)?);
+            reader
+                .inner()
+                .take(*compressed_bytes)
+                .read_to_end(&mut compressed)?;
+            Box::new(Cursor::new(super::next::decode(
+                &compressed,
+                chunk_dims.0 as usize,
+                chunk_row_bytes,
+                stored_rows as usize,
+            )?))
         } else if compression_method.to_u16() == 32909 {
             #[cfg(not(feature = "deflate"))]
             return Err(TiffError::UnsupportedError(

@@ -20,6 +20,7 @@ pub mod ifd;
 mod image;
 mod lerc_decode;
 mod logluv;
+mod next;
 #[cfg(feature = "jpeg")]
 mod ojpeg;
 #[cfg(feature = "deflate")]

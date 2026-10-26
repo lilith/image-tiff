@@ -1145,3 +1145,76 @@ fn pixarlog() {
         .build();
     assert_eq!(decode_all_planes(file), [0, 255, 255]);
 }
+
+/// 2-bit pixels packed MSB first, padding bits 0.
+fn pack2(pixels: &[u8]) -> Vec<u8> {
+    pixels
+        .chunks(4)
+        .map(|p| {
+            p.iter()
+                .enumerate()
+                .fold(0, |b, (i, &v)| b | v << (6 - 2 * i))
+        })
+        .collect()
+}
+
+/// NeXT (32766) 2-bit gray: literal rows (0x00), literal spans in a white row (0x40, offset,
+/// length) and runs of `<gray:2><count:6>` codes. Rows the data does not reach stay white.
+/// libtiff 4.7.2, which has no NeXT encoder, decodes these files to the same samples.
+#[test]
+fn next() {
+    for width in [13usize, 64, 150] {
+        let height = 7usize;
+        let row_bytes = width.div_ceil(4);
+        let pixels =
+            |y: usize| -> Vec<u8> { (0..width).map(|x| ((x / (3 + y) + y) % 4) as u8).collect() };
+        let mut rows_data = Vec::new();
+        let mut expected = Vec::new();
+        for y in 0..height {
+            let row = pixels(y);
+            match y % 3 {
+                0 => {
+                    rows_data.push([vec![0x00], pack2(&row)].concat());
+                    expected.extend(pack2(&row));
+                }
+                1 => {
+                    let span = &pack2(&row)[1..3];
+                    rows_data.push([vec![0x40, 0, 1, 0, 2], span.to_vec()].concat());
+                    let mut white = vec![0xff; row_bytes];
+                    white[1..3].copy_from_slice(span);
+                    expected.extend(white);
+                }
+                _ => {
+                    let mut codes = Vec::new();
+                    let mut x = 0;
+                    while x < width {
+                        let n = row[x..]
+                            .iter()
+                            .take_while(|&&p| p == row[x])
+                            .count()
+                            .min(63);
+                        codes.push(row[x] << 6 | n as u8);
+                        x += n;
+                    }
+                    // Runs are never empty, so the first code is not 0x00 or 0x40.
+                    rows_data.push(codes);
+                    expected.extend(pack2(&row));
+                }
+            }
+        }
+        // Strips of 4 rows; the last strip's final row has no data and stays white.
+        let mut strips: Vec<Vec<u8>> = rows_data.chunks(4).map(|r| r.concat()).collect();
+        let last = strips.len() - 1;
+        let drop = rows_data[height - 1].len();
+        let keep = strips[last].len() - drop;
+        strips[last].truncate(keep);
+        expected[(height - 1) * row_bytes..].fill(0xff);
+
+        let file = synth::image(width as u32, height as u32, 2, 1, 32766)
+            .short(262, &[1])
+            .long(278, &[4])
+            .strips(strips)
+            .build();
+        assert_eq!(decode_all_planes(file), expected, "width {width}");
+    }
+}
