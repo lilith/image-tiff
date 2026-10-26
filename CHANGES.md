@@ -65,6 +65,9 @@ tiles and planar layouts):
   reported unsupported.
 - PixarLog (32909) decodes to 8-bit, 16-bit and float samples. All 80
   matrix files match.
+- CCITT RLEW (32771) decodes: Modified Huffman with rows on 16-bit
+  boundaries. libtiff misreads rows that end with 16 or more bits in its
+  buffer; image-tiff keeps to the alignment (`parity/README.md`).
 - ThunderScan (32809) 4-bit decodes (`6d2cc3c2`).
 - The horizontal and floating-point predictors are undone before discarded
   extra samples are dropped (`31ea3376`); they were undone on the compacted
