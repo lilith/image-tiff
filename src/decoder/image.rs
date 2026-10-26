@@ -793,17 +793,16 @@ impl Image {
     ) -> TiffResult<Box<dyn Read + 'r>> {
         Ok(match compression_method {
             CompressionMethod::None => Box::new(reader),
+            // The SGILog readers decode whole rows of 4-byte samples.
             CompressionMethod::SgiLog => match samples {
-                1 => Box::new(super::logluv::LogLuv16::new(
-                    reader,
-                    compressed_length,
-                    dimensions.0,
-                )?),
-                3 => Box::new(super::logluv::LogLuv32::new(
-                    reader,
-                    compressed_length,
-                    dimensions.0,
-                )?),
+                1 => Box::new(super::logluv::WholeRows::new(
+                    super::logluv::LogLuv16::new(reader, compressed_length, dimensions.0)?,
+                    dimensions.0 as usize * 4,
+                )),
+                3 => Box::new(super::logluv::WholeRows::new(
+                    super::logluv::LogLuv32::new(reader, compressed_length, dimensions.0)?,
+                    dimensions.0 as usize * 12,
+                )),
                 _ => {
                     return Err(TiffError::UnsupportedError(
                         TiffUnsupportedError::UnsupportedCompressionMethod(
@@ -812,11 +811,10 @@ impl Image {
                     ))
                 }
             },
-            CompressionMethod::SgiLog24 => Box::new(super::logluv::LogLuv24::new(
-                reader,
-                compressed_length,
-                dimensions.0,
-            )?),
+            CompressionMethod::SgiLog24 => Box::new(super::logluv::WholeRows::new(
+                super::logluv::LogLuv24::new(reader, compressed_length, dimensions.0)?,
+                dimensions.0 as usize * 12,
+            )),
             #[cfg(feature = "lzw")]
             CompressionMethod::LZW => Box::new(super::stream::LZWReader::new(
                 reader,

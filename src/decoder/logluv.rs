@@ -543,3 +543,37 @@ fn test_decode_quantized_uv() {
     assert_eq!(decode_quantized_uv(16288), (20, 162));
     assert_eq!(decode_quantized_uv(16289), (0, 0)); // Out of range
 }
+
+/// Serves reads of any length from a reader that decodes whole rows of `row.len()` bytes:
+/// border tiles are read up to the image edge and their padding skipped separately.
+pub struct WholeRows<R> {
+    inner: R,
+    row: Vec<u8>,
+    pos: usize,
+}
+
+impl<R: Read> WholeRows<R> {
+    pub fn new(inner: R, row_len: usize) -> Self {
+        WholeRows {
+            inner,
+            row: vec![0; row_len],
+            pos: row_len,
+        }
+    }
+}
+
+impl<R: Read> Read for WholeRows<R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        if buf.is_empty() || self.row.is_empty() {
+            return Ok(0);
+        }
+        if self.pos == self.row.len() {
+            self.inner.read_exact(&mut self.row)?;
+            self.pos = 0;
+        }
+        let n = buf.len().min(self.row.len() - self.pos);
+        buf[..n].copy_from_slice(&self.row[self.pos..self.pos + n]);
+        self.pos += n;
+        Ok(n)
+    }
+}

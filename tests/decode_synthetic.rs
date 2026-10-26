@@ -1502,3 +1502,70 @@ fn jbig() {
     decoder.next_image().unwrap();
     assert!(decoder.read_image().is_err());
 }
+
+/// SGILog rows coded as literal runs of each byte plane (control byte < 128).
+fn sgilog_rle_rows(raw: &[u8], width: usize, bytes: usize) -> Vec<u8> {
+    let mut out = Vec::new();
+    for row in raw.chunks(width * bytes) {
+        for plane in 0..bytes {
+            let values: Vec<u8> = row.chunks(bytes).map(|p| p[plane]).collect();
+            for run in values.chunks(127) {
+                out.push(run.len() as u8);
+                out.extend_from_slice(run);
+            }
+        }
+    }
+    out
+}
+
+/// SGILog (34676, 34677) tiles whose width does not divide the image width: the readers decode
+/// whole rows, and the right border tiles were read only up to the image edge, which decoded
+/// nothing and left zeros. Tiles must decode to the samples the same image gives as strips.
+#[test]
+fn sgilog_border_tiles() {
+    let (width, height, tile) = (37usize, 23usize, 16usize);
+    // (compression, photometric, samples, raw bytes per pixel)
+    for (compression, photometric, samples, bytes) in [
+        (34676u16, 32844u16, 1u16, 2usize),
+        (34676, 32845, 3, 4),
+        (34677, 32845, 3, 3),
+    ] {
+        let raw: Vec<u8> = (0..width * height * bytes)
+            .map(|i| ((i * 151 + i / bytes * 7) % 251) as u8)
+            .collect();
+        let code = |pixels: &[u8], w: usize| {
+            if compression == 34677 {
+                pixels.to_vec()
+            } else {
+                sgilog_rle_rows(pixels, w, bytes)
+            }
+        };
+        let base = || {
+            synth::image(width as u32, height as u32, 16, samples, compression)
+                .short(262, &[photometric])
+        };
+        let strips = base()
+            .long(278, &[7])
+            .strips(
+                raw.chunks(width * bytes * 7)
+                    .map(|s| code(s, width))
+                    .collect(),
+            )
+            .build();
+        let tiles = base()
+            .short(322, &[tile as u16])
+            .short(323, &[tile as u16])
+            .tiles(
+                synth::tile_chunky(&raw, width, height, bytes, tile, tile)
+                    .iter()
+                    .map(|t| code(t, tile))
+                    .collect(),
+            )
+            .build();
+        assert_eq!(
+            decode_all_planes(tiles),
+            decode_all_planes(strips),
+            "compression {compression}, {samples} samples"
+        );
+    }
+}
