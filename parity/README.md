@@ -22,3 +22,16 @@ just parity ~/tmp/parity/run tests/images tests/libtiffpic <more files or dirs>
 
 Results land in `<out>/results.tsv`; `header.txt` records the libtiff version, the image-tiff
 commit and the host.
+
+## Where image-tiff and libtiff 4.7.2 differ on purpose
+
+- Chunks with no stored bytes (GDAL's sparse tiles and strips): image-tiff decodes zeros, as
+  GDAL and tifffile do; libtiff reports an error.
+- CCITT RLEW (32771): image-tiff starts every row on a 16-bit boundary from the start of the
+  chunk. libtiff clears `BitsAvail % 16` buffered bits at the end of a row, so when 16 or more
+  bits are buffered (its 16-bit lookups read up to 19 ahead) the padding byte stays in the
+  buffer and the next row is misread; its FAX3_DEBUG trace shows the row after such an end
+  decoding from the padding.
+- Old-style JPEG (6): libtiff returns the raw subsampled components; image-tiff returns
+  full-resolution YCbCr, upsampled by its JPEG decoder (zune-jpeg), so chroma differs and
+  luma is within 1 (zune-jpeg's IDCT).
