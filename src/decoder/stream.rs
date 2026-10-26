@@ -813,6 +813,138 @@ impl<R: Read> Read for YCbCrUpsamplingReader<R> {
     }
 }
 
+/// Decodes ThunderScan (compression 32809) 4-bit gray data row by row, as libtiff's
+/// `ThunderDecode` does: each row restarts from a last pixel of 0, codes are runs of the last
+/// pixel, 2-bit or 3-bit deltas, or raw pixels, and a row that ends early or overflows its width
+/// is an error.
+pub struct ThunderScanReader {
+    data: Vec<u8>,
+    pos: usize,
+    width: usize,
+    row: io::Cursor<Vec<u8>>,
+}
+
+impl ThunderScanReader {
+    pub fn new<R: Read>(
+        reader: R,
+        compressed_length: u64,
+        width: u32,
+        limits: &super::Limits,
+    ) -> crate::TiffResult<Self> {
+        let len =
+            usize::try_from(compressed_length).map_err(|_| crate::TiffError::LimitsExceeded)?;
+        if len > limits.intermediate_buffer_size {
+            return Err(crate::TiffError::LimitsExceeded);
+        }
+        let mut data = vec![0u8; len];
+        reader.take(compressed_length).read_exact(&mut data)?;
+        Ok(Self {
+            data,
+            pos: 0,
+            width: usize::try_from(width)?,
+            row: io::Cursor::new(Vec::new()),
+        })
+    }
+
+    fn decode_row(&mut self) -> io::Result<()> {
+        const TWO_BIT: [i32; 4] = [0, 1, 0, -1];
+        const THREE_BIT: [i32; 8] = [0, 1, 2, 3, 0, -3, -2, -1];
+        let max = self.width;
+        let out = self.row.get_mut();
+        out.clear();
+        out.resize(max.div_ceil(2), 0);
+        let (mut op, mut npixels, mut last) = (0usize, 0usize, 0u32);
+        let set =
+            |out: &mut Vec<u8>, op: &mut usize, npixels: &mut usize, last: &mut u32, v: u32| {
+                *last = v & 0xf;
+                if *npixels < max {
+                    if *npixels & 1 == 1 {
+                        out[*op] |= *last as u8;
+                        *op += 1;
+                    } else {
+                        out[*op] = (*last << 4) as u8;
+                    }
+                    *npixels += 1;
+                }
+            };
+        while self.pos < self.data.len() && npixels < max {
+            let n = u32::from(self.data[self.pos]);
+            self.pos += 1;
+            match n & 0xc0 {
+                0x00 => {
+                    let mut count = n as i64;
+                    if count == 0 {
+                        continue;
+                    }
+                    if npixels & 1 == 1 {
+                        out[op] |= last as u8;
+                        last = u32::from(out[op]);
+                        op += 1;
+                        npixels += 1;
+                        count -= 1;
+                    } else {
+                        last |= last << 4;
+                    }
+                    npixels += count as usize;
+                    if npixels > max {
+                        continue;
+                    }
+                    while count > 0 {
+                        out[op] = last as u8;
+                        op += 1;
+                        count -= 2;
+                    }
+                    if count == -1 {
+                        op -= 1;
+                        out[op] &= 0xf0;
+                    }
+                    last &= 0xf;
+                }
+                0x40 => {
+                    for shift in [4, 2, 0] {
+                        let delta = ((n >> shift) & 3) as usize;
+                        if delta != 2 {
+                            let v = (last as i32 + TWO_BIT[delta]) as u32;
+                            set(out, &mut op, &mut npixels, &mut last, v);
+                        }
+                    }
+                }
+                0x80 => {
+                    for shift in [3, 0] {
+                        let delta = ((n >> shift) & 7) as usize;
+                        if delta != 4 {
+                            let v = (last as i32 + THREE_BIT[delta]) as u32;
+                            set(out, &mut op, &mut npixels, &mut last, v);
+                        }
+                    }
+                }
+                _ => set(out, &mut op, &mut npixels, &mut last, n),
+            }
+        }
+        if npixels != max {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                if npixels < max {
+                    "ThunderScan: not enough data for a row"
+                } else {
+                    "ThunderScan: too much data for a row"
+                },
+            ));
+        }
+        self.row.set_position(0);
+        Ok(())
+    }
+}
+
+impl Read for ThunderScanReader {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        if self.row.position() as usize == self.row.get_ref().len() {
+            self.decode_row()?;
+        }
+        self.row.read(buf)
+    }
+}
+
 #[cfg(feature = "webp")]
 pub struct WebPReader {
     inner: Cursor<Vec<u8>>,

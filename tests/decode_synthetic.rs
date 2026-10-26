@@ -532,3 +532,38 @@ fn predictor_with_dropped_extra_samples() {
         .collect();
     assert_eq!(decode_all_planes(file), expected);
 }
+
+/// ThunderScan (32809): raw pixels, 2-bit and 3-bit deltas and runs, including a run that starts
+/// on an odd pixel and ends on an odd count; a row without enough data is an error, as in libtiff.
+#[test]
+fn thunderscan() {
+    // Row 0: raw 5; deltas +1, -1, skip; deltas +3, -3; run of 2 -> 5 6 5 8 5 5 5.
+    // Row 1: raw 3; run of 4 (from an odd pixel); raw 9; raw 1 -> 3 3 3 3 3 9 1.
+    let data = vec![
+        0xc5,
+        0x40 | (1 << 4) | (3 << 2) | 2,
+        0x80 | (3 << 3) | 5,
+        0x02, //
+        0xc3,
+        0x04,
+        0xc9,
+        0xc1,
+    ];
+    let file = synth::image(7, 2, 4, 1, 32809)
+        .short(262, &[1])
+        .strips(vec![data.clone()])
+        .build();
+    assert_eq!(
+        decode_all_planes(file),
+        [0x56, 0x58, 0x55, 0x50, 0x33, 0x33, 0x39, 0x10]
+    );
+
+    let short = synth::image(7, 2, 4, 1, 32809)
+        .short(262, &[1])
+        .strips(vec![data[..6].to_vec()])
+        .build();
+    let mut decoder = Decoder::open(Cursor::new(short)).unwrap();
+    decoder.next_image().unwrap();
+    let mut buffer = vec![0u8; 8];
+    assert!(decoder.read_image_bytes(&mut buffer).is_err());
+}

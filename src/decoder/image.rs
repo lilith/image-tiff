@@ -737,6 +737,7 @@ impl Image {
         samples: u16,
         #[cfg_attr(not(feature = "fax"), allow(unused_variables))] fill_order: u16,
         #[cfg_attr(not(feature = "fax"), allow(unused_variables))] t4_options: u32,
+        bits_per_sample: u8,
         #[cfg_attr(
             not(any(feature = "webp", feature = "fax", feature = "jpeg")),
             allow(unused_variables)
@@ -892,6 +893,15 @@ impl Image {
                 limits,
             )?),
 
+            // ThunderScan: 4-bit samples only, as in libtiff's ThunderSetupDecode.
+            method if method.to_u16() == 32809 && samples == 1 && bits_per_sample == 4 => {
+                Box::new(super::stream::ThunderScanReader::new(
+                    reader,
+                    compressed_length,
+                    dimensions.0,
+                    limits,
+                )?)
+            }
             method => {
                 return Err(TiffError::UnsupportedError(
                     TiffUnsupportedError::UnsupportedCompressionMethod(method),
@@ -1327,6 +1337,7 @@ impl Image {
                 self.samples,
                 self.fill_order,
                 self.t4_options,
+                self.bits_per_sample,
                 limits,
             )?
         };
