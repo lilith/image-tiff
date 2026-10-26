@@ -94,6 +94,8 @@ pub(crate) struct Image {
     pub fill_order: u16,
     /// `T4Options` (292) for Group 3 compression, 0 when absent.
     pub t4_options: u32,
+    /// `LercParameters` (50674) for LERC compression: version, additional compression.
+    pub lerc_params: Vec<u32>,
     /// The color map (palette) for `PhotometricInterpretation::RGBPalette`.
     /// Contains `3 * 2^BitsPerSample` u16 entries: R values, then G values, then B values.
     pub color_map: Option<Vec<u16>>,
@@ -344,6 +346,16 @@ impl Image {
 
         // T4Options (292) only matters for Group 3; it is read through its number because
         // `Tag` has no named variant for it.
+        let lerc_params = if compression_method.to_u16() == 34887 {
+            tag_reader
+                .find_tag(Tag::Unknown(50674))?
+                .map(Value::into_u32_vec)
+                .transpose()?
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+
         let t4_options = if compression_method == CompressionMethod::Fax3 {
             tag_reader
                 .find_tag(Tag::Unknown(292))?
@@ -534,6 +546,7 @@ impl Image {
             chroma_subsampling,
             fill_order,
             t4_options,
+            lerc_params,
             color_map,
             decompression_to_host_endian: matches!(
                 compression_method,
@@ -1159,7 +1172,7 @@ impl Image {
             limits,
         } = reader;
 
-        let decompressed_byte_order = if self.decompression_to_host_endian {
+        let mut decompressed_byte_order = if self.decompression_to_host_endian {
             ByteOrder::native()
         } else {
             // Convert from the byte order of the file.
@@ -1330,15 +1343,37 @@ impl Image {
         // A chunk with no stored bytes is absent (GDAL writes such sparse tiles and strips with
         // offset and byte count 0). Like GDAL and tifffile, decode it as stored samples of 0;
         // reading it as data would decode whatever bytes sit at its offset.
+        let stored_rows = match self.chunk_type {
+            ChunkType::Strip => data_dims.1,
+            ChunkType::Tile => chunk_dims.1,
+        };
         let mut reader: Box<dyn Read> = if *compressed_bytes == 0 {
-            let stored_rows = match self.chunk_type {
-                ChunkType::Strip => data_dims.1,
-                ChunkType::Tile => chunk_dims.1,
-            };
             let len = chunk_row_bytes
                 .checked_mul(stored_rows as usize)
                 .ok_or(TiffError::LimitsExceeded)?;
             Box::new(io::repeat(0).take(len as u64))
+        } else if compression_method.to_u16() == 34887 {
+            // `compressed_bytes` was bounded by `intermediate_buffer_size` above.
+            let mut compressed = Vec::with_capacity(usize::try_from(*compressed_bytes)?);
+            reader
+                .inner()
+                .take(*compressed_bytes)
+                .read_to_end(&mut compressed)?;
+            let alpha_last = self.planar_config == PlanarConfiguration::Chunky
+                && self.extra_samples.last() == Some(&ExtraSamples::UnassociatedAlpha);
+            let chunk = super::lerc_decode::LercChunk {
+                params: &self.lerc_params,
+                sample_format: self.sample_format,
+                bits_per_sample: self.bits_per_sample,
+                samples: layout.tiff_samples,
+                alpha_last,
+                width: chunk_dims.0,
+                height: stored_rows,
+                limit: limits.intermediate_buffer_size,
+            };
+            // LERC decodes to samples in memory.
+            decompressed_byte_order = ByteOrder::native();
+            Box::new(Cursor::new(super::lerc_decode::decode(compressed, &chunk)?))
         } else {
             Self::create_reader(
                 reader.inner(),

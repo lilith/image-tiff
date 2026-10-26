@@ -58,6 +58,8 @@ zune-jpeg = { version = "0.5.15", optional = true }
 # zenextras' zentiff selects tiff features by name and must still resolve against crates.io
 # tiff 0.11.3, which has no `lzma` feature. Without `optimization` the crate forbids unsafe code.
 lzma-rust2 = { version = "0.24.0", default-features = false, features = ["std", "xz"] }
+# Fork: LERC (Compression 34887), not optional for the same reason as lzma-rust2.
+lerc-rs = { version = "0.7.0", default-features = false, features = ["std"] }
 image-webp = {version = "0.2.4", optional = true }
 
 [dev-dependencies]

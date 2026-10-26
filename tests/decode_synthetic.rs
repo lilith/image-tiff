@@ -625,3 +625,175 @@ fn lzma() {
         .build();
     assert_eq!(decode_all_planes(file), rgb);
 }
+
+/// One LERC blob holding `depth` interleaved samples per pixel in each of `bands` bands, with
+/// one validity mask per band (None: all valid).
+fn lerc_blob<T: lerc::Sample>(
+    width: usize,
+    height: usize,
+    depth: u32,
+    bands: u32,
+    data: &[T],
+    masks: Option<Vec<lerc::bitmask::BitMask>>,
+) -> Vec<u8> {
+    let masks = masks.unwrap_or_else(|| {
+        (0..bands)
+            .map(|_| lerc::bitmask::BitMask::all_valid(width * height))
+            .collect()
+    });
+    lerc::encode_borrowed(
+        width as u32,
+        height as u32,
+        depth,
+        bands,
+        data,
+        &masks,
+        None,
+        lerc::Precision::Lossless,
+    )
+    .unwrap()
+}
+
+/// LERC (34887) as libtiff writes and reads it: one band whose depth is the samples per chunk,
+/// optionally zlib-wrapped (LercParameters [4, 1]); float pixels the mask marks invalid read as
+/// NaN; float data stored one band per sample; 8-bit unassociated alpha carried as the mask.
+/// Checked against libtiff 4.7.2 on the parity matrix (`parity/`).
+#[test]
+fn lerc() {
+    let (width, height) = (29usize, 11usize);
+
+    // u16 gray strips of 4 rows, plain and zlib-wrapped.
+    let gray16: Vec<u16> = (0..width * height)
+        .map(|i| (i * 2311 % 65521) as u16)
+        .collect();
+    let expected: Vec<u8> = gray16.iter().flat_map(|v| v.to_ne_bytes()).collect();
+    for wrapper in [0u32, 1] {
+        let strips = gray16
+            .chunks(width * 4)
+            .map(|rows| {
+                let blob = lerc_blob(width, rows.len() / width, 1, 1, rows, None);
+                if wrapper == 1 {
+                    synth::deflate(&blob)
+                } else {
+                    blob
+                }
+            })
+            .collect();
+        let file = synth::image(width as u32, height as u32, 16, 1, 34887)
+            .short(262, &[1])
+            .long(278, &[4])
+            .long(50674, &[4, wrapper])
+            .strips(strips)
+            .build();
+        assert_eq!(decode_all_planes(file), expected, "wrapper {wrapper}");
+    }
+
+    // f32 RGB tiles with invalid pixels, depth 3 in one band.
+    let tile = 16usize;
+    let rgb: Vec<f32> = (0..width * height * 3)
+        .map(|i| (i * 37 % 1009) as f32 / 7.0)
+        .collect();
+    let invalid = |x: usize, y: usize| (x + 2 * y).is_multiple_of(5);
+    let mut expected = rgb.clone();
+    for y in 0..height {
+        for x in 0..width {
+            if invalid(x, y) {
+                expected[(y * width + x) * 3..][..3].fill(f32::from_bits(0x7fc0_0000));
+            }
+        }
+    }
+    let expected: Vec<u8> = expected.iter().flat_map(|v| v.to_ne_bytes()).collect();
+    let rgb_bytes: Vec<u8> = rgb.iter().flat_map(|v| v.to_ne_bytes()).collect();
+    let tiles_of = |interleaved: bool| -> Vec<Vec<u8>> {
+        synth::tile_chunky(&rgb_bytes, width, height, 12, tile, tile)
+            .into_iter()
+            .enumerate()
+            .map(|(t, bytes)| {
+                let (tx, ty) = (
+                    t % width.div_ceil(tile) * tile,
+                    t / width.div_ceil(tile) * tile,
+                );
+                let values: Vec<f32> = bytes
+                    .chunks(4)
+                    .map(|b| f32::from_ne_bytes(b.try_into().unwrap()))
+                    .collect();
+                let mut mask = lerc::bitmask::BitMask::all_valid(tile * tile);
+                for k in 0..tile * tile {
+                    if invalid(tx + k % tile, ty + k / tile) {
+                        mask.set_invalid(k);
+                    }
+                }
+                if interleaved {
+                    lerc_blob(tile, tile, 3, 1, &values, Some(vec![mask]))
+                } else {
+                    let planes: Vec<f32> = (0..3)
+                        .flat_map(|s| values.iter().skip(s).step_by(3).copied())
+                        .collect();
+                    lerc_blob(tile, tile, 1, 3, &planes, Some(vec![mask; 3]))
+                }
+            })
+            .collect()
+    };
+    for interleaved in [true, false] {
+        let file = synth::image(width as u32, height as u32, 32, 3, 34887)
+            .short(262, &[2])
+            .short(339, &[3, 3, 3])
+            .short(322, &[tile as u16])
+            .short(323, &[tile as u16])
+            .long(50674, &[4, 0])
+            .tiles(tiles_of(interleaved))
+            .build();
+        assert_eq!(
+            decode_all_planes(file),
+            expected,
+            "interleaved {interleaved}"
+        );
+    }
+
+    // u8 RGBA with unassociated alpha: the blob holds RGB, the mask holds alpha != 0.
+    let rgba: Vec<u8> = (0..width * height * 4)
+        .map(|i| match i % 4 {
+            3 => {
+                if (i / 4) % 3 == 0 {
+                    0
+                } else {
+                    255
+                }
+            }
+            _ => (i * 7 % 253) as u8,
+        })
+        .collect();
+    let colors: Vec<u8> = rgba.chunks(4).flat_map(|p| p[..3].to_vec()).collect();
+    let mut mask = lerc::bitmask::BitMask::all_valid(width * height);
+    for (k, p) in rgba.chunks(4).enumerate() {
+        if p[3] == 0 {
+            mask.set_invalid(k);
+        }
+    }
+    let file = synth::image(width as u32, height as u32, 8, 4, 34887)
+        .short(262, &[2])
+        .short(338, &[2])
+        .long(278, &[height as u32])
+        .long(50674, &[4, 0])
+        .strips(vec![lerc_blob(
+            width,
+            height,
+            3,
+            1,
+            &colors,
+            Some(vec![mask]),
+        )])
+        .build();
+    // LERC keeps no samples for masked pixels, so the colour under alpha 0 reads as 0 too.
+    let expected: Vec<u8> = rgba
+        .chunks(4)
+        .flat_map(|p| {
+            if p[3] == 0 {
+                [0; 4]
+            } else {
+                [p[0], p[1], p[2], p[3]]
+            }
+        })
+        .collect();
+    assert_eq!(decode_all_planes(file), expected);
+}
