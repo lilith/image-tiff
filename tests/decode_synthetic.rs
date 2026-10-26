@@ -238,7 +238,8 @@ fn check_ccitt(
 
 /// Group 3 rows coded two-dimensionally (T4Options bit 0) were decoded as one-dimensional
 /// rows, producing wrong pixels; Modified Huffman (compression 2, upstream issue 405) was
-/// unsupported.
+/// unsupported, and so was CCITT RLEW (32771), Modified Huffman with rows on 16-bit
+/// boundaries.
 #[cfg(feature = "fax")]
 #[test]
 fn ccitt_group3_and_modified_huffman() {
@@ -254,6 +255,9 @@ fn ccitt_group3_and_modified_huffman() {
                     rows_per_strip,
                     synth::ccitt::modified_huffman,
                 );
+                check_ccitt(32771, None, fill_order, &rows, rows_per_strip, |r| {
+                    synth::ccitt::modified_huffman_aligned(r, 16)
+                });
                 for options in [0, 4] {
                     check_ccitt(3, Some(options), fill_order, &rows, rows_per_strip, |r| {
                         synth::ccitt::group3(r, options, 1)

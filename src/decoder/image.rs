@@ -909,6 +909,15 @@ impl Image {
                 limits,
             )?),
             #[cfg(feature = "fax")]
+            CompressionMethod::Unknown(32771) => Box::new(super::stream::Group3Reader::new(
+                dimensions,
+                reader,
+                compressed_length,
+                fill_order,
+                super::stream::CcittScheme::ModifiedHuffmanWords,
+                limits,
+            )?),
+            #[cfg(feature = "fax")]
             CompressionMethod::Fax4 => Box::new(super::stream::Group4Reader::new(
                 dimensions,
                 reader,

@@ -343,10 +343,16 @@ pub mod ccitt {
 
     /// Modified Huffman (compression 2): 1D rows, each padded to a byte boundary.
     pub fn modified_huffman(rows: &[Vec<bool>]) -> Vec<u8> {
+        modified_huffman_aligned(rows, 8)
+    }
+
+    /// Modified Huffman with each row padded to a multiple of `align` bits: 8 for
+    /// compression 2, 16 for CCITT RLEW (32771).
+    pub fn modified_huffman_aligned(rows: &[Vec<bool>], align: usize) -> Vec<u8> {
         let sink = Sink::default();
         for row in rows {
             row_1d(&sink, row);
-            while sink.len() % 8 != 0 {
+            while sink.len() % align != 0 {
                 sink.put(0, 1);
             }
         }

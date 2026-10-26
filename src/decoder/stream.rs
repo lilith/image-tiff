@@ -401,9 +401,37 @@ impl<R: Read> Read for Group4Reader<R> {
 /// Owning byte reader for Group 3 decoding: the compressed data is consumed
 /// into an iterator so the reader doesn't borrow the buffer.
 #[cfg(feature = "fax")]
-type OwnedBitReader = fax34::ByteReader<
-    core::iter::Map<std::vec::IntoIter<u8>, fn(u8) -> Result<u8, std::convert::Infallible>>,
+type OwnedBitReader = CountingBitReader<
+    fax34::ByteReader<
+        core::iter::Map<std::vec::IntoIter<u8>, fn(u8) -> Result<u8, std::convert::Infallible>>,
+    >,
 >;
+
+/// A bit reader that counts the bits consumed from the start of the chunk, for alignments
+/// wider than a byte.
+#[cfg(feature = "fax")]
+struct CountingBitReader<R> {
+    inner: R,
+    consumed: u64,
+}
+
+#[cfg(feature = "fax")]
+impl<R: fax34::BitReader> fax34::BitReader for CountingBitReader<R> {
+    type Error = R::Error;
+
+    fn peek(&self, bits: u8) -> Option<u16> {
+        self.inner.peek(bits)
+    }
+
+    fn consume(&mut self, bits: u8) -> Result<(), Self::Error> {
+        self.consumed += u64::from(bits);
+        self.inner.consume(bits)
+    }
+
+    fn bits_to_byte_boundary(&self) -> u8 {
+        self.inner.bits_to_byte_boundary()
+    }
+}
 
 #[cfg(feature = "fax")]
 use fax34::BitReader as _;
@@ -415,6 +443,9 @@ pub enum CcittScheme {
     /// Compression 2 (Modified Huffman): one-dimensional rows without EOL codes, each row
     /// starting on a byte boundary.
     ModifiedHuffman,
+    /// Compression 32771 (CCITT RLEW): Modified Huffman with each row starting on a 16-bit
+    /// boundary from the start of the chunk, as libtiff reads it.
+    ModifiedHuffmanWords,
     /// Compression 3 (T.4 / Group 3) with its `T4Options` value. Bit 0 selects
     /// two-dimensional coding, bit 1 uncompressed mode, bit 2 byte-aligned EOL codes.
     Group3 { options: u32 },
@@ -490,7 +521,10 @@ impl Group3Reader {
 
         // Create an owning bit reader (Vec consumed by into_iter, no borrow issues)
         let map_fn: fn(u8) -> Result<u8, std::convert::Infallible> = Ok;
-        let bit_reader = fax34::ByteReader::new(compressed.into_iter().map(map_fn)).unwrap();
+        let bit_reader = CountingBitReader {
+            inner: fax34::ByteReader::new(compressed.into_iter().map(map_fn)).unwrap(),
+            consumed: 0,
+        };
 
         Ok(Self {
             reader: bit_reader,
@@ -685,6 +719,13 @@ impl Read for Group3Reader {
                 CcittScheme::ModifiedHuffman => {
                     self.decode_1d();
                     Self::skip_to_byte_boundary(&mut self.reader);
+                }
+                CcittScheme::ModifiedHuffmanWords => {
+                    self.decode_1d();
+                    let pad = (16 - self.reader.consumed % 16) % 16;
+                    if pad > 0 {
+                        let _ = self.reader.consume(pad as u8);
+                    }
                 }
                 CcittScheme::Group3 { options } => {
                     // Every row is preceded by an EOL; with two-dimensional coding a tag bit
