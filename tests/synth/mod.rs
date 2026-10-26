@@ -426,3 +426,420 @@ pub mod ccitt {
             .collect()
     }
 }
+
+/// A T.82 (JBIG) encoder for the lowest resolution layer, written from the recommendation's
+/// flow diagrams (6.8.2), to make JBIG test data. Its output for the recommendation's
+/// artificial test image reproduces the byte counts of T.82 Table 29.
+pub mod jbig {
+    /// T.82 Table 24: LSZ, NLPS, NMPS, SWITCH.
+    const STATES: [(u16, u8, u8, u8); 113] = [
+        (0x5a1d, 1, 1, 1),
+        (0x2586, 14, 2, 0),
+        (0x1114, 16, 3, 0),
+        (0x080b, 18, 4, 0),
+        (0x03d8, 20, 5, 0),
+        (0x01da, 23, 6, 0),
+        (0x00e5, 25, 7, 0),
+        (0x006f, 28, 8, 0),
+        (0x0036, 30, 9, 0),
+        (0x001a, 33, 10, 0),
+        (0x000d, 35, 11, 0),
+        (0x0006, 9, 12, 0),
+        (0x0003, 10, 13, 0),
+        (0x0001, 12, 13, 0),
+        (0x5a7f, 15, 15, 1),
+        (0x3f25, 36, 16, 0),
+        (0x2cf2, 38, 17, 0),
+        (0x207c, 39, 18, 0),
+        (0x17b9, 40, 19, 0),
+        (0x1182, 42, 20, 0),
+        (0x0cef, 43, 21, 0),
+        (0x09a1, 45, 22, 0),
+        (0x072f, 46, 23, 0),
+        (0x055c, 48, 24, 0),
+        (0x0406, 49, 25, 0),
+        (0x0303, 51, 26, 0),
+        (0x0240, 52, 27, 0),
+        (0x01b1, 54, 28, 0),
+        (0x0144, 56, 29, 0),
+        (0x00f5, 57, 30, 0),
+        (0x00b7, 59, 31, 0),
+        (0x008a, 60, 32, 0),
+        (0x0068, 62, 33, 0),
+        (0x004e, 63, 34, 0),
+        (0x003b, 32, 35, 0),
+        (0x002c, 33, 9, 0),
+        (0x5ae1, 37, 37, 1),
+        (0x484c, 64, 38, 0),
+        (0x3a0d, 65, 39, 0),
+        (0x2ef1, 67, 40, 0),
+        (0x261f, 68, 41, 0),
+        (0x1f33, 69, 42, 0),
+        (0x19a8, 70, 43, 0),
+        (0x1518, 72, 44, 0),
+        (0x1177, 73, 45, 0),
+        (0x0e74, 74, 46, 0),
+        (0x0bfb, 75, 47, 0),
+        (0x09f8, 77, 48, 0),
+        (0x0861, 78, 49, 0),
+        (0x0706, 79, 50, 0),
+        (0x05cd, 48, 51, 0),
+        (0x04de, 50, 52, 0),
+        (0x040f, 50, 53, 0),
+        (0x0363, 51, 54, 0),
+        (0x02d4, 52, 55, 0),
+        (0x025c, 53, 56, 0),
+        (0x01f8, 54, 57, 0),
+        (0x01a4, 55, 58, 0),
+        (0x0160, 56, 59, 0),
+        (0x0125, 57, 60, 0),
+        (0x00f6, 58, 61, 0),
+        (0x00cb, 59, 62, 0),
+        (0x00ab, 61, 63, 0),
+        (0x008f, 61, 32, 0),
+        (0x5b12, 65, 65, 1),
+        (0x4d04, 80, 66, 0),
+        (0x412c, 81, 67, 0),
+        (0x37d8, 82, 68, 0),
+        (0x2fe8, 83, 69, 0),
+        (0x293c, 84, 70, 0),
+        (0x2379, 86, 71, 0),
+        (0x1edf, 87, 72, 0),
+        (0x1aa9, 87, 73, 0),
+        (0x174e, 72, 74, 0),
+        (0x1424, 72, 75, 0),
+        (0x119c, 74, 76, 0),
+        (0x0f6b, 74, 77, 0),
+        (0x0d51, 75, 78, 0),
+        (0x0bb6, 77, 79, 0),
+        (0x0a40, 77, 48, 0),
+        (0x5832, 80, 81, 1),
+        (0x4d1c, 88, 82, 0),
+        (0x438e, 89, 83, 0),
+        (0x3bdd, 90, 84, 0),
+        (0x34ee, 91, 85, 0),
+        (0x2eae, 92, 86, 0),
+        (0x299a, 93, 87, 0),
+        (0x2516, 86, 71, 0),
+        (0x5570, 88, 89, 1),
+        (0x4ca9, 95, 90, 0),
+        (0x44d9, 96, 91, 0),
+        (0x3e22, 97, 92, 0),
+        (0x3824, 99, 93, 0),
+        (0x32b4, 99, 94, 0),
+        (0x2e17, 93, 86, 0),
+        (0x56a8, 95, 96, 1),
+        (0x4f46, 101, 97, 0),
+        (0x47e5, 102, 98, 0),
+        (0x41cf, 103, 99, 0),
+        (0x3c3d, 104, 100, 0),
+        (0x375e, 99, 93, 0),
+        (0x5231, 105, 102, 0),
+        (0x4c0f, 106, 103, 0),
+        (0x4639, 107, 104, 0),
+        (0x415e, 103, 99, 0),
+        (0x5627, 105, 106, 1),
+        (0x50e7, 108, 107, 0),
+        (0x4b85, 109, 103, 0),
+        (0x5597, 110, 109, 0),
+        (0x504f, 111, 107, 0),
+        (0x5a10, 110, 111, 1),
+        (0x5522, 112, 109, 0),
+        (0x59eb, 112, 111, 1),
+    ];
+
+    struct Coder {
+        c: u32,
+        a: u32,
+        ct: u32,
+        sc: u32,
+        buffer: u32,
+        out: Vec<u8>,
+    }
+
+    impl Coder {
+        /// INITENC (Figure 27), without the estimator reset.
+        fn new() -> Self {
+            Coder {
+                c: 0,
+                a: 0x10000,
+                ct: 11,
+                sc: 0,
+                buffer: 0,
+                out: Vec::new(),
+            }
+        }
+
+        /// BYTEOUT (Figure 26).
+        fn byte_out(&mut self) {
+            let temp = self.c >> 19;
+            if temp > 0xff {
+                self.out.push((self.buffer + 1) as u8);
+                self.out.extend(std::iter::repeat_n(0x00, self.sc as usize));
+                self.sc = 0;
+                self.buffer = temp & 0xff;
+            } else if temp == 0xff {
+                self.sc += 1;
+            } else {
+                self.out.push(self.buffer as u8);
+                self.out.extend(std::iter::repeat_n(0xff, self.sc as usize));
+                self.sc = 0;
+                self.buffer = temp;
+            }
+            self.c &= 0x7ffff;
+            self.ct = 8;
+        }
+
+        /// RENORME (Figure 25).
+        fn renormalize(&mut self) {
+            loop {
+                self.a <<= 1;
+                self.c <<= 1;
+                self.ct -= 1;
+                if self.ct == 0 {
+                    self.byte_out();
+                }
+                if self.a >= 0x8000 {
+                    break;
+                }
+            }
+        }
+
+        /// ENCODE, CODELPS and CODEMPS (Figures 22-24).
+        fn encode(&mut self, pix: u8, state: &mut u8, mps: &mut u8) {
+            let (lsz, nlps, nmps, switch) = STATES[usize::from(*state)];
+            let lsz = u32::from(lsz);
+            self.a -= lsz;
+            if pix != *mps {
+                if self.a >= lsz {
+                    self.c += self.a;
+                    self.a = lsz;
+                }
+                if switch == 1 {
+                    *mps = 1 - *mps;
+                }
+                *state = nlps;
+                self.renormalize();
+            } else if self.a < 0x8000 {
+                if self.a < lsz {
+                    self.c += self.a;
+                    self.a = lsz;
+                }
+                *state = nmps;
+                self.renormalize();
+            }
+        }
+
+        /// FLUSH with CLEARBITS and FINALWRITES (Figures 28-30); trailing zero bytes removed.
+        fn finish(mut self) -> Vec<u8> {
+            let temp = (self.a - 1 + self.c) & 0xffff_0000;
+            self.c = if temp < self.c { temp + 0x8000 } else { temp };
+            self.c <<= self.ct;
+            if self.c > 0x7ff_ffff {
+                self.out.push((self.buffer + 1) as u8);
+                self.out.extend(std::iter::repeat_n(0x00, self.sc as usize));
+            } else {
+                self.out.push(self.buffer as u8);
+                self.out.extend(std::iter::repeat_n(0xff, self.sc as usize));
+            }
+            self.out.push((self.c >> 19) as u8);
+            self.out.push((self.c >> 11) as u8);
+            self.out.remove(0);
+            while self.out.last() == Some(&0) {
+                self.out.pop();
+            }
+            self.out
+        }
+    }
+
+    /// Encoding parameters for the lowest resolution layer.
+    #[derive(Clone, Default)]
+    pub struct Params {
+        pub two_line: bool,
+        pub tpbon: bool,
+        pub l0: u32,
+        pub mx: u8,
+        /// End stripes with SDRST instead of SDNORM.
+        pub reset: bool,
+        /// AT movements: (stripe, line within the stripe, tx), effective from that line.
+        pub at_moves: Vec<(u32, u32, i8)>,
+        /// Append a NEWLEN marker segment with this height (VLENGTH is set).
+        pub new_length: Option<u32>,
+        /// Put a comment marker segment before the first stripe.
+        pub comment: bool,
+    }
+
+    /// Byte counts of an encoding, as T.82 Table 29 lists them.
+    #[derive(Debug, Default, PartialEq, Eq)]
+    pub struct Counts {
+        pub scd: usize,
+        pub pscd: usize,
+        pub sde: usize,
+        pub bid: usize,
+        pub bie: usize,
+    }
+
+    /// Encodes `rows` (one bool per pixel, true is foreground) as one bi-level image entity.
+    pub fn encode(rows: &[Vec<bool>], params: &Params) -> (Vec<u8>, Counts) {
+        let height = rows.len() as u32;
+        let width = rows.first().map_or(0, |r| r.len()) as u32;
+        let mut options = 0u8;
+        if params.two_line {
+            options |= 0x40;
+        }
+        if params.new_length.is_some() {
+            options |= 0x20;
+        }
+        if params.tpbon {
+            options |= 0x08;
+        }
+        let mut bie = vec![0, 0, 1, 0];
+        bie.extend_from_slice(&width.to_be_bytes());
+        bie.extend_from_slice(&height.to_be_bytes());
+        bie.extend_from_slice(&params.l0.to_be_bytes());
+        bie.extend_from_slice(&[params.mx, 0, 0, options]);
+        let mut counts = Counts::default();
+        if params.comment {
+            bie.extend_from_slice(&[0xff, 0x07, 0, 0, 0, 3, b'a', 0xff, b'c']);
+        }
+
+        let px = |x: i64, y: i64, top: i64| -> usize {
+            if x < 0 || x >= i64::from(width) || y < top {
+                0
+            } else {
+                usize::from(rows[y as usize][x as usize])
+            }
+        };
+        let mut state = vec![0u8; 1024];
+        let mut mps = vec![0u8; 1024];
+        let (mut tx, mut ty) = (0i64, 0i64);
+        let mut lntp_prev = 1u8;
+        let mut reset = true;
+        let stripes = height.div_ceil(params.l0);
+        for s in 0..stripes {
+            let first = s * params.l0;
+            let end = (first + params.l0).min(height);
+            for &(stripe, line, new_tx) in &params.at_moves {
+                if stripe == s {
+                    bie.extend_from_slice(&[0xff, 0x06]);
+                    bie.extend_from_slice(&line.to_be_bytes());
+                    bie.extend_from_slice(&[new_tx as u8, 0]);
+                }
+            }
+            if reset {
+                state.fill(0);
+                mps.fill(0);
+                lntp_prev = 1;
+                tx = 0;
+                ty = 0;
+            }
+            let top = if reset { i64::from(first) } else { 0 };
+            let top = if s == 0 { 0 } else { top };
+            let mut coder = Coder::new();
+            for y in first..end {
+                for &(stripe, line, new_tx) in &params.at_moves {
+                    if stripe == s && first + line == y {
+                        tx = i64::from(new_tx);
+                        ty = 0;
+                    }
+                }
+                let yy = i64::from(y);
+                if params.tpbon {
+                    let above_differs =
+                        (0..i64::from(width)).any(|x| px(x, yy, top) != px(x, yy - 1, top));
+                    let lntp = u8::from(above_differs);
+                    let slntp = u8::from(lntp == lntp_prev);
+                    let cx = if params.two_line { 0x195 } else { 0x0e5 };
+                    coder.encode(slntp, &mut state[cx], &mut mps[cx]);
+                    lntp_prev = lntp;
+                    if lntp == 0 {
+                        continue;
+                    }
+                }
+                for x in 0..i64::from(width) {
+                    let at = |dx: i64, dy: i64| {
+                        if tx == 0 && ty == 0 {
+                            px(x + dx, yy + dy, top)
+                        } else {
+                            px(x - tx, yy - ty, top)
+                        }
+                    };
+                    let cx = if params.two_line {
+                        (px(x - 3, yy - 1, top) << 9)
+                            | (px(x - 2, yy - 1, top) << 8)
+                            | (px(x - 1, yy - 1, top) << 7)
+                            | (px(x, yy - 1, top) << 6)
+                            | (px(x + 1, yy - 1, top) << 5)
+                            | (at(2, -1) << 4)
+                            | (px(x - 4, yy, top) << 3)
+                            | (px(x - 3, yy, top) << 2)
+                            | (px(x - 2, yy, top) << 1)
+                            | px(x - 1, yy, top)
+                    } else {
+                        (px(x - 1, yy - 2, top) << 9)
+                            | (px(x, yy - 2, top) << 8)
+                            | (px(x + 1, yy - 2, top) << 7)
+                            | (px(x - 2, yy - 1, top) << 6)
+                            | (px(x - 1, yy - 1, top) << 5)
+                            | (px(x, yy - 1, top) << 4)
+                            | (px(x + 1, yy - 1, top) << 3)
+                            | (at(2, -1) << 2)
+                            | (px(x - 2, yy, top) << 1)
+                            | px(x - 1, yy, top)
+                    };
+                    let pix = px(x, yy, 0) as u8;
+                    coder.encode(pix, &mut state[cx], &mut mps[cx]);
+                }
+            }
+            let scd = coder.finish();
+            counts.scd += scd.len();
+            let mut pscd = Vec::with_capacity(scd.len());
+            for &b in &scd {
+                pscd.push(b);
+                if b == 0xff {
+                    pscd.push(0x00);
+                }
+            }
+            counts.pscd += pscd.len();
+            counts.sde += pscd.len() + 2;
+            bie.extend_from_slice(&pscd);
+            bie.extend_from_slice(&[0xff, if params.reset { 0x03 } else { 0x02 }]);
+            reset = params.reset;
+        }
+        if let Some(new_height) = params.new_length {
+            bie.extend_from_slice(&[0xff, 0x05]);
+            bie.extend_from_slice(&new_height.to_be_bytes());
+        }
+        counts.bie = bie.len();
+        counts.bid = bie.len() - 20;
+        (bie, counts)
+    }
+
+    /// The artificial test image of T.82 7.2.1 (Figure 38): 1960 x 1951 pixels.
+    pub fn artificial_image() -> Vec<Vec<bool>> {
+        let mut prsg: u32 = 1;
+        let mut repeat = [false; 8];
+        (0..1951)
+            .map(|j| {
+                (0..1960usize)
+                    .map(|i| {
+                        if j < 192 {
+                            false
+                        } else if j < 1023 || (i >> 3) & 3 == 0 {
+                            let sum = (prsg & 1)
+                                + ((prsg >> 2) & 1)
+                                + ((prsg >> 11) & 1)
+                                + ((prsg >> 15) & 1);
+                            prsg = (prsg << 1).wrapping_add(sum & 1);
+                            let on = prsg & 3 == 0;
+                            repeat[i & 7] = on;
+                            on
+                        } else {
+                            repeat[i & 7]
+                        }
+                    })
+                    .collect()
+            })
+            .collect()
+    }
+}

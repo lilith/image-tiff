@@ -18,6 +18,7 @@ mod cycles;
 mod entry_reader;
 pub mod ifd;
 mod image;
+mod jbig;
 mod lerc_decode;
 mod logluv;
 mod next;

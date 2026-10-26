@@ -1479,6 +1479,35 @@ impl Image {
             // LERC decodes to samples in memory.
             decompressed_byte_order = ByteOrder::native();
             Box::new(Cursor::new(super::lerc_decode::decode(compressed, &chunk)?))
+        } else if compression_method.to_u16() == 34661 {
+            // `compressed_bytes` was bounded by `intermediate_buffer_size` above.
+            let mut compressed = Vec::with_capacity(usize::try_from(*compressed_bytes)?);
+            reader
+                .inner()
+                .take(*compressed_bytes)
+                .read_to_end(&mut compressed)?;
+            // libtiff reverses the bits of a JBIG strip when FillOrder is 1 (MSB to LSB): the
+            // codec opts out of libtiff's own reversal, then reverses when the fill order
+            // matches the handle's default. Its files are written the same way.
+            if self.fill_order == 1 {
+                compressed.iter_mut().for_each(|b| *b = b.reverse_bits());
+            }
+            let mut decoded = super::jbig::decode(&compressed, limits.intermediate_buffer_size)?;
+            // libtiff copies the decoded bitmap into the strip: an error when it is larger, the
+            // rest zero when it is smaller.
+            let expected = chunk_row_bytes
+                .checked_mul(stored_rows as usize)
+                .ok_or(TiffError::LimitsExceeded)?;
+            if decoded.len() > expected {
+                return Err(TiffError::FormatError(
+                    TiffFormatError::CompressedDataCorrupt(format!(
+                        "JBIG: decoded {} bytes, the chunk holds {expected}",
+                        decoded.len()
+                    )),
+                ));
+            }
+            decoded.resize(expected, 0);
+            Box::new(Cursor::new(decoded))
         } else if compression_method.to_u16() == 32766 {
             if self.bits_per_sample != 2 {
                 return Err(TiffError::UnsupportedError(

@@ -1218,3 +1218,219 @@ fn next() {
         assert_eq!(decode_all_planes(file), expected, "width {width}");
     }
 }
+
+/// A JBIG TIFF of one bi-level image entity per strip, stored as libtiff stores it: bit-reversed
+/// when FillOrder is 1.
+fn jbig_tiff(
+    width: usize,
+    strips: &[(Vec<Vec<bool>>, synth::jbig::Params)],
+    fill_order: u16,
+) -> Vec<u8> {
+    let height: usize = strips
+        .iter()
+        .map(|(rows, p)| p.new_length.map_or(rows.len(), |n| n as usize))
+        .sum();
+    let data: Vec<Vec<u8>> = strips
+        .iter()
+        .map(|(rows, params)| {
+            let (mut bie, _) = synth::jbig::encode(rows, params);
+            if fill_order == 1 {
+                bie.iter_mut().for_each(|b| *b = b.reverse_bits());
+            }
+            bie
+        })
+        .collect();
+    synth::image(width as u32, height as u32, 1, 1, 34661)
+        .short(262, &[1])
+        .short(266, &[fill_order])
+        .long(278, &[strips[0].0.len() as u32])
+        .strips(data)
+        .build()
+}
+
+/// T.82 7.2.2: the recommendation's three single-progression tests on its artificial image.
+/// The test encoder reproduces the byte counts of Table 29, and the decoder returns the image.
+#[test]
+fn jbig_recommendation_tests() {
+    let image = synth::jbig::artificial_image();
+    assert_eq!(image.iter().flatten().filter(|&&p| p).count(), 861_965);
+    let cases = [
+        (
+            synth::jbig::Params {
+                l0: 1951,
+                ..Default::default()
+            },
+            [316_094, 317_362, 317_364, 317_364, 317_384],
+        ),
+        (
+            synth::jbig::Params {
+                l0: 1951,
+                two_line: true,
+                ..Default::default()
+            },
+            [315_887, 317_110, 317_112, 317_112, 317_132],
+        ),
+        (
+            // AT moves to tx = 8 at the top of stripe 9 (Table 28).
+            synth::jbig::Params {
+                l0: 128,
+                mx: 8,
+                tpbon: true,
+                at_moves: vec![(9, 0, 8)],
+                ..Default::default()
+            },
+            [252_557, 253_593, 253_625, 253_633, 253_653],
+        ),
+    ];
+    let packed = synth::ccitt::pack(&image);
+    for (params, [scd, pscd, sde, bid, bie]) in cases {
+        let (_, counts) = synth::jbig::encode(&image, &params);
+        assert_eq!(
+            counts,
+            synth::jbig::Counts {
+                scd,
+                pscd,
+                sde,
+                bid,
+                bie
+            },
+            "two_line {} tpbon {}",
+            params.two_line,
+            params.tpbon
+        );
+        let file = jbig_tiff(1960, &[(image.clone(), params.clone())], 1);
+        assert_eq!(
+            decode_all_planes(file),
+            packed,
+            "two_line {}",
+            params.two_line
+        );
+    }
+}
+
+/// JBIG (34661) as libtiff stores it, beyond its own encoder's defaults: two- and three-line
+/// templates, typical prediction, stripes ending in SDRST, AT movements, a NEWLEN marker
+/// segment, a comment, both fill orders and several strips. libtiff 4.7.2 decodes
+/// jbigkit-written files of these kinds identically (`parity/jbig_tiff.c`).
+#[test]
+fn jbig() {
+    let (width, height) = (61usize, 40usize);
+    let rows: Vec<Vec<bool>> = (0..height)
+        .map(|y| {
+            (0..width)
+                .map(|x| match y / 10 {
+                    0 => (x / 3 + y / 2) % 7 == 0,
+                    1 => x % 5 == y % 5,
+                    2 => ((x * 2_654_435_761) ^ (y * 40503)) % 11 < 3,
+                    _ => (x / 7 + y / 4) % 2 == 1,
+                })
+                .collect()
+        })
+        .collect();
+    let base = synth::jbig::Params {
+        l0: 8,
+        mx: 8,
+        ..Default::default()
+    };
+    let variants = [
+        base.clone(),
+        synth::jbig::Params {
+            two_line: true,
+            ..base.clone()
+        },
+        synth::jbig::Params {
+            tpbon: true,
+            ..base.clone()
+        },
+        synth::jbig::Params {
+            two_line: true,
+            tpbon: true,
+            reset: true,
+            ..base.clone()
+        },
+        synth::jbig::Params {
+            tpbon: true,
+            reset: true,
+            at_moves: vec![(1, 3, 6), (3, 0, 0)],
+            ..base.clone()
+        },
+        synth::jbig::Params {
+            two_line: true,
+            at_moves: vec![(2, 0, 7)],
+            comment: true,
+            ..base.clone()
+        },
+        synth::jbig::Params {
+            l0: 3,
+            tpbon: true,
+            ..base.clone()
+        },
+    ];
+    for (i, params) in variants.iter().enumerate() {
+        for fill_order in [1, 2] {
+            let file = jbig_tiff(width, &[(rows.clone(), params.clone())], fill_order);
+            assert_eq!(
+                decode_all_planes(file),
+                synth::ccitt::pack(&rows),
+                "variant {i}, fill order {fill_order}"
+            );
+        }
+        // Two strips, each its own image entity.
+        let file = jbig_tiff(
+            width,
+            &[
+                (rows[..20].to_vec(), params.clone()),
+                (rows[20..].to_vec(), params.clone()),
+            ],
+            1,
+        );
+        assert_eq!(decode_all_planes(file), synth::ccitt::pack(&rows));
+    }
+
+    // NEWLEN: the entity says 40 rows, then ends the image after 33.
+    let params = synth::jbig::Params {
+        new_length: Some(33),
+        ..base
+    };
+    let file = jbig_tiff(width, &[(rows.clone(), params)], 1);
+    let mut expected = synth::ccitt::pack(&rows[..33]);
+    assert_eq!(decode_all_planes(file), expected.clone());
+    // A strip larger than the decoded image keeps zeros after it, as libtiff fills it.
+    let (bie, _) = synth::jbig::encode(
+        &rows[..33],
+        &synth::jbig::Params {
+            l0: 8,
+            ..Default::default()
+        },
+    );
+    let file = synth::image(width as u32, 40, 1, 1, 34661)
+        .short(262, &[1])
+        .short(266, &[2])
+        .long(278, &[40])
+        .strips(vec![bie])
+        .build();
+    expected.resize(width.div_ceil(8) * 40, 0);
+    assert_eq!(decode_all_planes(file), expected);
+
+    // Coded data left over after a stripe's lines is rejected, as jbigkit rejects it.
+    let (mut bie, _) = synth::jbig::encode(
+        &rows,
+        &synth::jbig::Params {
+            l0: 8,
+            ..Default::default()
+        },
+    );
+    let end = (20..bie.len())
+        .find(|&i| bie[i] == 0xff && bie[i + 1] == 0x02)
+        .unwrap();
+    bie.splice(end..end, [0x55; 16]);
+    let file = synth::image(width as u32, 40, 1, 1, 34661)
+        .short(262, &[1])
+        .short(266, &[2])
+        .long(278, &[40])
+        .strips(vec![bie])
+        .build();
+    let mut decoder = Decoder::open(Cursor::new(file)).unwrap();
+    decoder.next_image().unwrap();
+    assert!(decoder.read_image().is_err());
+}
