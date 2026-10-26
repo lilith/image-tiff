@@ -44,6 +44,15 @@ Fork fixes (2026-10-24), from an inventory of open upstream issues and PRs
 - `Decoder::new` reads the first directory with tiff 0.11.3's value limits, so
   a first image with more than 1 MiB of strip or tile offsets opens again.
 
+Fork additions:
+- `Decoder::with_decompressor` and `decoder::pluggable::{ChunkDecompressor,
+  ChunkInfo, FileRead}`: caller-supplied strip/tile decompressors that replace
+  or add a compression method. Only decompression is replaced; predictor,
+  byte order, unpacking and photometric steps still run on the output. A
+  decompressor can request tag values, read at file offsets, learn the
+  chunk's index, plane and position, and return samples in file or native
+  byte order. Short output is an error, never padded.
+
 Fixes:
 - Decoding a tiled image whose width is not a multiple of the tile width no
   longer corrupts the columns below the right border tiles when extra samples

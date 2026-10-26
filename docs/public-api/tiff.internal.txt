@@ -11,7 +11,7 @@
 #
 #   pub types (struct/enum/trait/alias)         1
 #   inherent methods                           30
-#   trait roster entries (type × trait)        26
+#   trait roster entries (type × trait)        27
 #
 # per-module pub lines:
 #   (root)                            2
@@ -53,12 +53,13 @@ pub fn tags::SampleFormat::assert_fields_are_eq(&self)
 pub fn tags::Tag::assert_fields_are_eq(&self)
 pub type decoder::ifd::Directory = std::collections::hash::map::HashMap<tags::Tag, decoder::ifd::Entry>
 
-## trait impls (26 types)
+## trait impls (27 types)
 
 ColorType: TrivialClone
 decoder::ChunkType: TrivialClone
 decoder::DecodingSampleType: TrivialClone
 decoder::TiffCodingUnit: TrivialClone
+decoder::pluggable::ChunkInfo<'a>: TrivialClone
 encoder::Compression: TrivialClone
 encoder::Ifd: TrivialClone
 encoder::Ifd8: TrivialClone

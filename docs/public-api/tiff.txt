@@ -6,29 +6,29 @@
 # impls omitted; re-export duplicates annotated `[also: path]`.
 # DO NOT EDIT BY HAND — commit regenerated changes with the code.
 #
-# files: tiff.txt 712 lines (supported surface) | tiff.features.txt 0 added (features: deflate,fax,jpeg,lzw,webp,zstd,zstd-safe-rust) | tiff.internal.txt 57 lines (57 hidden + 0 excluded-feature)
+# files: tiff.txt 738 lines (supported surface) | tiff.features.txt 0 added (features: deflate,fax,jpeg,lzw,webp,zstd,zstd-safe-rust) | tiff.internal.txt 58 lines (58 hidden + 0 excluded-feature)
 
 ## summary
 #
-#   pub modules                                 7
-#   pub types (struct/enum/trait/alias)        92
+#   pub modules                                 8
+#   pub types (struct/enum/trait/alias)        95
 #   pub consts/statics                         31
 #   free functions                              4
-#   inherent methods                          179
-#   struct fields                              29
+#   inherent methods                          184
+#   struct fields                              45
 #   enum variants                             250
-#   trait roster entries (type × trait)       272
+#   trait roster entries (type × trait)       275
 #   conditional trait impls (verbatim)          7
-#   auto-trait-complete types                  70
+#   auto-trait-complete types                  71
 #   auto-trait exceptions                       9
 #
 # per-module pub lines:
 #   (root)                          123
-#   decoder                         194
+#   decoder                         219
 #   encoder                         128
 #   tags                            147
 
-## items (592 lines)
+## items (617 lines)
 
 pub mod tiff
 pub mod decoder
@@ -78,6 +78,30 @@ pub fn decoder::ifd::Entry::count(&self) -> u64
 pub fn decoder::ifd::Entry::field_type(&self) -> tags::Type
 pub fn decoder::ifd::Entry::new(tags::Type, u32, [u8; 4]) -> decoder::ifd::Entry
 pub fn decoder::ifd::Entry::new_u64(tags::Type, u64, [u8; 8]) -> decoder::ifd::Entry
+pub mod decoder::pluggable
+#[non_exhaustive] pub struct decoder::pluggable::ChunkInfo<'a>
+pub decoder::pluggable::ChunkInfo::bits_per_sample: u16
+pub decoder::pluggable::ChunkInfo::byte_order: tags::ByteOrder
+pub decoder::pluggable::ChunkInfo::chunk_index: u32
+pub decoder::pluggable::ChunkInfo::compression: tags::CompressionMethod
+pub decoder::pluggable::ChunkInfo::fill_order: u16
+pub decoder::pluggable::ChunkInfo::height: u32
+pub decoder::pluggable::ChunkInfo::jpeg_tables: core::option::Option<&'a [u8]>
+pub decoder::pluggable::ChunkInfo::max_output_len: usize
+pub decoder::pluggable::ChunkInfo::photometric: tags::PhotometricInterpretation
+pub decoder::pluggable::ChunkInfo::plane: u16
+pub decoder::pluggable::ChunkInfo::sample_format: tags::SampleFormat
+pub decoder::pluggable::ChunkInfo::samples: u16
+pub decoder::pluggable::ChunkInfo::tags: &'a [(tags::Tag, decoder::ifd::Value)]
+pub decoder::pluggable::ChunkInfo::width: u32
+pub decoder::pluggable::ChunkInfo::x: u32
+pub decoder::pluggable::ChunkInfo::y: u32
+pub fn decoder::pluggable::ChunkInfo<'_>::tag(&self, tags::Tag) -> core::option::Option<&decoder::ifd::Value>
+pub trait decoder::pluggable::ChunkDecompressor: core::marker::Send + core::marker::Sync
+pub fn decoder::pluggable::ChunkDecompressor::decompress(&self, &[u8], &decoder::pluggable::ChunkInfo<'_>, &mut dyn decoder::pluggable::FileRead, &mut alloc::vec::Vec<u8>) -> TiffResult<tags::ByteOrder>
+pub fn decoder::pluggable::ChunkDecompressor::tags(&self) -> &[tags::Tag]
+pub trait decoder::pluggable::FileRead
+pub fn decoder::pluggable::FileRead::read_at(&mut self, u64, usize) -> TiffResult<alloc::vec::Vec<u8>>
 pub enum decoder::ChunkType
 pub decoder::ChunkType::Strip
 pub decoder::ChunkType::Tile
@@ -150,6 +174,7 @@ pub fn decoder::Decoder<R>::read_tag(&mut self, tags::Tag) -> TiffResult<core::o
 pub fn decoder::Decoder<R>::seek_to_directory(&mut self, usize) -> TiffResult<()>
 pub fn decoder::Decoder<R>::seek_to_image(&mut self, usize) -> TiffResult<()>
 pub fn decoder::Decoder<R>::take_with_reader<S: alloc::io::read::Read + core::io::seek::Seek>(&mut self, S) -> decoder::Decoder<S>
+pub fn decoder::Decoder<R>::with_decompressor(self, tags::CompressionMethod, alloc::rcs::arc::Arc<dyn decoder::pluggable::ChunkDecompressor>) -> decoder::Decoder<R>
 pub fn decoder::Decoder<R>::with_lenient(self, bool) -> decoder::Decoder<R>
 pub fn decoder::Decoder<R>::with_limits(self, decoder::Limits) -> decoder::Decoder<R>
 pub fn decoder::Decoder<R>::chunk_data_dimensions(&self, u32) -> (u32, u32)
@@ -623,7 +648,7 @@ pub fn Directory::next(&self) -> core::option::Option<tags::IfdPointer>
 pub fn Directory::set_next(&mut self, core::option::Option<tags::IfdPointer>)
 pub type TiffResult<T> = core::result::Result<T, TiffError>
 
-## trait impls (103 types)
+## trait impls (104 types)
 
 &T: encoder::TiffValue
 ColorType: Clone, Copy, Debug, Eq, Hash, PartialEq
@@ -659,6 +684,7 @@ decoder::TiffCodingUnit: Clone, Copy, Debug, Eq, Hash, PartialEq
 decoder::TiffHeader: Debug
 decoder::ifd::Entry: Clone, Debug
 decoder::ifd::Value: Clone, Debug, PartialEq
+decoder::pluggable::ChunkInfo<'a>: Clone, Copy, Debug
 encoder::Compression: Clone, Copy, Debug, Default, PartialEq
 encoder::DirectoryEncoder<'a, W, K>: Drop
 encoder::Ifd: Clone, Copy, Debug, Eq, PartialEq, encoder::TiffValue
@@ -738,7 +764,7 @@ impl<T, const N: usize> encoder::TiffValue for [T; N] where [T]: encoder::TiffVa
 
 ## auto traits
 
-70 types implement all of: Freeze, RefUnwindSafe, Send, Sync, Unpin, UnwindSafe
+71 types implement all of: Freeze, RefUnwindSafe, Send, Sync, Unpin, UnwindSafe
 TiffError: !RefUnwindSafe !UnwindSafe
 decoder::Decoder<R>: !Freeze !RefUnwindSafe !Send !Sync !Unpin !UnwindSafe
 decoder::DecodingSampleSlice<'a>: !UnwindSafe

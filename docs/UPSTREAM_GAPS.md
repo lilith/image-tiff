@@ -50,7 +50,7 @@ says what the decoded output was compared against.
 ## Fork-only additions under review
 
 - `Decoder::with_decompressor` / `decoder::pluggable::ChunkDecompressor`: caller-supplied
-  strip/tile decompressors (PR in lilith/image-tiff, assigned to lilith).
+  strip/tile decompressors (branch `feat/chunk-decompressors`, PR in lilith/image-tiff assigned to lilith).
 
 ## Not yet handled
 
