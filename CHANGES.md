@@ -63,6 +63,8 @@ tiles and planar layouts):
   decode; luma is within 1 of libtiff and chroma is upsampled by zune-jpeg,
   where libtiff returns the subsampled components. Planar old-style JPEG is
   reported unsupported.
+- PixarLog (32909) decodes to 8-bit, 16-bit and float samples. All 80
+  matrix files match.
 - ThunderScan (32809) 4-bit decodes (`6d2cc3c2`).
 - The horizontal and floating-point predictors are undone before discarded
   extra samples are dropped (`31ea3376`); they were undone on the compacted
