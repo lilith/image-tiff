@@ -39,7 +39,7 @@ commit and the host.
 - Old-style JPEG (6): libtiff returns the raw subsampled components; image-tiff returns
   full-resolution YCbCr, upsampled by its JPEG decoder (zune-jpeg), so chroma differs and
   luma is within 1 (zune-jpeg's IDCT).
-- JBIG (34661): libtiff refuses strips after the first; image-tiff decodes each strip's
+- JBIG (34661): libtiff refuses multi-strip JBIG; image-tiff decodes each strip's
   image entity (138 multi-strip files match libjbig called strip by strip). Three-line JBIG
   with one-line stripes and no typical prediction, as jbigkit 2.1 writes it for wide images,
   is rejected by both decoders (coded data left after a stripe's lines).
