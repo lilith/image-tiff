@@ -498,3 +498,37 @@ fn sparse_chunks_decode_as_zero() {
         [vec![1u8; 8], vec![0; 8], vec![3; 8]].concat()
     );
 }
+
+/// RGB with two unspecified extra samples and the horizontal predictor: the predictor runs over
+/// all five samples, so it must be undone before the extra samples are dropped.
+#[cfg(feature = "deflate")]
+#[test]
+fn predictor_with_dropped_extra_samples() {
+    let (width, height, samples) = (9usize, 4usize, 5usize);
+    let pixels: Vec<u8> = (0..width * height * samples)
+        .map(|i| (i * 37 % 251) as u8)
+        .collect();
+    let predicted: Vec<u8> = pixels
+        .chunks(width * samples)
+        .flat_map(|row| {
+            (0..row.len()).map(move |i| {
+                if i < samples {
+                    row[i]
+                } else {
+                    row[i].wrapping_sub(row[i - samples])
+                }
+            })
+        })
+        .collect();
+    let file = synth::image(width as u32, height as u32, 8, samples as u16, 8)
+        .short(262, &[2])
+        .short(317, &[2])
+        .short(338, &[0, 0])
+        .strips(vec![synth::deflate(&predicted)])
+        .build();
+    let expected: Vec<u8> = pixels
+        .chunks(samples)
+        .flat_map(|p| p[..3].to_vec())
+        .collect();
+    assert_eq!(decode_all_planes(file), expected);
+}

@@ -1542,16 +1542,18 @@ impl Image {
                 let row = &mut row[..data_row_bytes];
                 reader.read_exact(&mut encoded)?;
 
-                Self::compact_photometric_bytes(&mut encoded, row, &photo_range);
-
+                // The predictor differences every stored sample, extra samples included, so it
+                // is undone on the whole row before the extra samples are dropped.
                 super::fix_endianness_and_predict(
-                    row,
+                    &mut encoded,
                     color_type.bit_depth(),
                     samples,
                     decompressed_byte_order,
                     predictor,
                     scratch,
                 );
+
+                Self::compact_photometric_bytes(&mut encoded, row, &photo_range);
 
                 // No-op in this branch: promoted layouts only occur in the
                 // unpacking branch. Called so the integer branches cannot
