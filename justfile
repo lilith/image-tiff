@@ -23,3 +23,8 @@ test:
 # Run clippy over all targets and features
 clippy:
     cargo clippy --all-features --all-targets -- -D warnings
+
+# Decode TIFFs with libtiff 4.7.2 (built into ~/.cache by parity/build-libtiff.sh) and with
+# image-tiff, and compare the samples: `just parity ~/tmp/parity/run tests/images ...`.
+parity out +inputs:
+    parity/run.sh {{out}} {{inputs}}
