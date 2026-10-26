@@ -60,4 +60,18 @@ for bits in (8,):
     cmap = (np.arange(3 * (1 << bits)).reshape(3, -1) * 997 % 65536).astype(np.uint16)
     save(f"palette-u{bits}.tif", field((1 << bits) - 1, 1, np.uint8), photometric="palette",
          colormap=cmap, bitspersample=bits if bits < 8 else None)
+# Masks: NaN pixels (LERC stores a validity mask for floats) and 0/255 alpha (LERC carries
+# unassociated 8-bit alpha as its mask).
+nan_gray = (field(1000, 1, np.float64) / 7.0).astype(np.float32)
+nan_gray[::3, ::4] = np.nan
+save("gray-f32-nan.tif", nan_gray, photometric="minisblack")
+nan_rgb = (field(1000, 3, np.float64) / 9.0).astype(np.float32)
+nan_rgb[1::4, ::3, :] = np.nan
+save("rgb-f32-nan.tif", nan_rgb, photometric="rgb")
+nan64 = (field(1000, 1, np.float64) / 7.0)
+nan64[::5, 1::2] = np.nan
+save("gray-f64-nan.tif", nan64, photometric="minisblack")
+rgba_mask = field(255, 4, np.uint8)
+rgba_mask[..., 3] = np.where((np.indices((H, W)).sum(0) % 3) == 0, 0, 255)
+save("rgba-u8-mask.tif", rgba_mask, photometric="rgb", extrasamples=[2])
 print(len(os.listdir(out)), "base images")
