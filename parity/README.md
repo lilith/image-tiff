@@ -20,6 +20,10 @@ just parity ~/tmp/parity/run tests/images tests/libtiffpic <more files or dirs>
   `fork-missing`, `jpeg` (libtiff's RGB against image-tiff's YCbCr through the JFIF formula),
   `skipped`.
 
+`gen_matrix.sh` writes the codec matrix (tiffcp, plus `libtiff_recode.c` for PixarLog);
+`gen_jbig.sh` writes jbigkit-encoded JBIG files beyond libtiff's own encoder (`jbig_tiff.c`:
+templates, typical and deterministic prediction, SDRST, AT, NEWLEN, differential layers).
+
 Results land in `<out>/results.tsv`; `header.txt` records the libtiff version, the image-tiff
 commit and the host.
 
