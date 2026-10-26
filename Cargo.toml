@@ -65,6 +65,8 @@ image-webp = {version = "0.2.4", optional = true }
 [dev-dependencies]
 # Encodes xz streams (with libtiff's Delta + LZMA2 filter chain) for the LZMA decode tests.
 lzma-rust2 = { version = "0.24.0", default-features = false, features = ["std", "xz", "encoder"] }
+# Encodes the JPEG streams the old-style JPEG tests split into TIFF tables and strips.
+jpeg-encoder = "0.7.1"
 criterion = "0.8.2"
 # Workspace standard for new benches (interleaved arms + paired statistics).
 zenbench = "0.1.7"

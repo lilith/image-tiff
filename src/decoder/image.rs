@@ -96,6 +96,12 @@ pub(crate) struct Image {
     pub t4_options: u32,
     /// `LercParameters` (50674) for LERC compression: version, additional compression.
     pub lerc_params: Vec<u32>,
+    /// The old-style JPEG tags (Compression 6).
+    #[cfg(feature = "jpeg")]
+    pub ojpeg: Option<super::ojpeg::Tags>,
+    /// The old-style JPEG header, read with the first chunk decoded.
+    #[cfg(feature = "jpeg")]
+    pub ojpeg_header: std::sync::OnceLock<Arc<super::ojpeg::Header>>,
     /// The color map (palette) for `PhotometricInterpretation::RGBPalette`.
     /// Contains `3 * 2^BitsPerSample` u16 entries: R values, then G values, then B values.
     pub color_map: Option<Vec<u16>>,
@@ -344,8 +350,6 @@ impl Image {
             .transpose()?
             .unwrap_or(1);
 
-        // T4Options (292) only matters for Group 3; it is read through its number because
-        // `Tag` has no named variant for it.
         let lerc_params = if compression_method.to_u16() == 34887 {
             tag_reader
                 .find_tag(Tag::Unknown(50674))?
@@ -356,6 +360,32 @@ impl Image {
             Vec::new()
         };
 
+        // The old-style JPEG tags (512-521) are read through their numbers because `Tag` has no
+        // named variants for them.
+        #[cfg(feature = "jpeg")]
+        let ojpeg = if compression_method == CompressionMethod::JPEG {
+            let mut offsets = |tag| -> TiffResult<Vec<u64>> {
+                Ok(tag_reader
+                    .find_tag(Tag::Unknown(tag))?
+                    .map(Value::into_u64_vec)
+                    .transpose()?
+                    .unwrap_or_default())
+            };
+            let first = |values: Vec<u64>| values.first().copied().unwrap_or(0);
+            Some(super::ojpeg::Tags {
+                interchange_format: first(offsets(513)?),
+                interchange_format_length: first(offsets(514)?),
+                restart_interval: first(offsets(515)?) as u16,
+                q_tables: offsets(519)?,
+                dc_tables: offsets(520)?,
+                ac_tables: offsets(521)?,
+            })
+        } else {
+            None
+        };
+
+        // T4Options (292) only matters for Group 3; it is read through its number because
+        // `Tag` has no named variant for it.
         let t4_options = if compression_method == CompressionMethod::Fax3 {
             tag_reader
                 .find_tag(Tag::Unknown(292))?
@@ -547,6 +577,10 @@ impl Image {
             fill_order,
             t4_options,
             lerc_params,
+            #[cfg(feature = "jpeg")]
+            ojpeg,
+            #[cfg(feature = "jpeg")]
+            ojpeg_header: std::sync::OnceLock::new(),
             color_map,
             decompression_to_host_endian: matches!(
                 compression_method,
@@ -799,8 +833,6 @@ impl Image {
             }
             #[cfg(feature = "jpeg")]
             CompressionMethod::ModernJPEG => {
-                use zune_jpeg::zune_core;
-
                 if jpeg_tables.is_some() && compressed_length < 2 {
                     return Err(TiffError::FormatError(
                         TiffFormatError::InvalidTagValueType(Tag::JPEGTables),
@@ -854,22 +886,7 @@ impl Image {
                     .take(max_jpeg_bytes as u64)
                     .read_to_end(&mut jpeg_data)?;
 
-                let mut decoder =
-                    zune_jpeg::JpegDecoder::new(zune_core::bytestream::ZCursor::new(jpeg_data));
-                let mut options: zune_core::options::DecoderOptions = Default::default();
-
-                // Disable color conversion by setting the output colorspace to the input
-                // colorspace.
-                decoder.decode_headers()?;
-                if let Some(colorspace) = decoder.input_colorspace() {
-                    options = options.jpeg_set_out_colorspace(colorspace);
-                }
-
-                decoder.set_options(options);
-
-                let data = decoder.decode()?;
-
-                Box::new(Cursor::new(data))
+                Box::new(Cursor::new(decode_jpeg(jpeg_data)?))
             }
             #[cfg(feature = "fax")]
             CompressionMethod::Fax3 => Box::new(super::stream::Group3Reader::new(
@@ -1158,6 +1175,85 @@ impl Image {
         }
     }
 
+    /// Decodes one strip or tile of an old-style JPEG image (Compression 6) to full-resolution
+    /// samples in the JPEG's color space.
+    fn old_jpeg_chunk<R: Read + Seek>(
+        &self,
+        reader: &mut super::stream::EndianReader<R>,
+        chunk_index: u32,
+        compressed_bytes: u64,
+        rows: u32,
+        limit: usize,
+    ) -> TiffResult<Box<dyn Read>> {
+        let unsupported = || {
+            TiffError::UnsupportedError(TiffUnsupportedError::UnsupportedCompressionMethod(
+                CompressionMethod::JPEG,
+            ))
+        };
+        #[cfg(not(feature = "jpeg"))]
+        {
+            let _ = (reader, chunk_index, compressed_bytes, rows, limit);
+            Err(unsupported())
+        }
+        #[cfg(feature = "jpeg")]
+        {
+            let tags = self.ojpeg.as_ref().ok_or_else(unsupported)?;
+            // libtiff reads planar old-style JPEG as one scan per plane; not taken yet.
+            if self.planar_config == PlanarConfiguration::Planar && self.samples > 1 {
+                return Err(TiffError::UnsupportedError(
+                    TiffUnsupportedError::UnsupportedPlanarConfig(Some(self.planar_config)),
+                ));
+            }
+            let mut chunk = Vec::with_capacity(usize::try_from(compressed_bytes)?);
+            reader
+                .inner()
+                .take(compressed_bytes)
+                .read_to_end(&mut chunk)?;
+            let header = match self.ojpeg_header.get() {
+                Some(header) => header.clone(),
+                None => {
+                    let first = if chunk_index == 0 {
+                        chunk.clone()
+                    } else {
+                        let len = self.chunk_bytes.first().copied().unwrap_or(0);
+                        if len > limit as u64 {
+                            return Err(TiffError::LimitsExceeded);
+                        }
+                        let mut first = Vec::new();
+                        reader.goto_offset(self.chunk_offsets.first().copied().unwrap_or(0))?;
+                        reader.inner().take(len).read_to_end(&mut first)?;
+                        first
+                    };
+                    let (chunk_width, chunk_length) = match self.chunk_type {
+                        ChunkType::Strip => (self.width, self.chunk_dimensions()?.1),
+                        ChunkType::Tile => self.chunk_dimensions()?,
+                    };
+                    let geometry = super::ojpeg::Geometry {
+                        samples: self.samples,
+                        ycbcr: self.photometric_interpretation == PhotometricInterpretation::YCbCr,
+                        subsampling: self.chroma_subsampling,
+                        image_width: self.width,
+                        image_length: self.height,
+                        chunk_width,
+                        chunk_length,
+                        tiled: self.chunk_type == ChunkType::Tile,
+                    };
+                    let header = Arc::new(super::ojpeg::Header::read(
+                        reader.inner(),
+                        tags,
+                        &geometry,
+                        &first,
+                        limit,
+                    )?);
+                    let _ = self.ojpeg_header.set(header.clone());
+                    header
+                }
+            };
+            let stream = header.chunk_stream(chunk_index == 0, &chunk, rows)?;
+            Ok(Box::new(Cursor::new(decode_jpeg(stream)?)))
+        }
+    }
+
     pub(crate) fn expand_chunk(
         &self,
         reader: &mut ValueReader<impl Read + Seek>,
@@ -1374,6 +1470,14 @@ impl Image {
             // LERC decodes to samples in memory.
             decompressed_byte_order = ByteOrder::native();
             Box::new(Cursor::new(super::lerc_decode::decode(compressed, &chunk)?))
+        } else if compression_method == CompressionMethod::JPEG {
+            self.old_jpeg_chunk(
+                reader,
+                chunk_index,
+                *compressed_bytes,
+                stored_rows,
+                limits.intermediate_buffer_size,
+            )?
         } else {
             Self::create_reader(
                 reader.inner(),
@@ -1394,7 +1498,10 @@ impl Image {
         // pixel rows. JPEG handles upsampling internally.
         if matches!(color_type, ColorType::YCbCr(_))
             && self.chroma_subsampling != (1, 1)
-            && !matches!(compression_method, CompressionMethod::ModernJPEG)
+            && !matches!(
+                compression_method,
+                CompressionMethod::ModernJPEG | CompressionMethod::JPEG
+            )
         {
             // Blocks cover the chunk as stored: border tiles keep their full width and length,
             // and a strip holds only its own rows.
@@ -1648,6 +1755,26 @@ impl Image {
                 dst.copy_from_slice(&src[..photo_range.start as usize]);
             });
     }
+}
+
+/// Decodes a JPEG stream without color conversion: samples come out in the stream's own color
+/// space, upsampled to full resolution.
+#[cfg(feature = "jpeg")]
+fn decode_jpeg(jpeg_data: Vec<u8>) -> TiffResult<Vec<u8>> {
+    use zune_jpeg::zune_core;
+    let mut decoder = zune_jpeg::JpegDecoder::new(zune_core::bytestream::ZCursor::new(jpeg_data));
+    let mut options: zune_core::options::DecoderOptions = Default::default();
+
+    // Disable color conversion by setting the output colorspace to the input
+    // colorspace.
+    decoder.decode_headers()?;
+    if let Some(colorspace) = decoder.input_colorspace() {
+        options = options.jpeg_set_out_colorspace(colorspace);
+    }
+
+    decoder.set_options(options);
+
+    Ok(decoder.decode()?)
 }
 
 /// Unpack N-bit packed samples (MSB-first) into standard-width output samples in native byte

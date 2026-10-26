@@ -659,6 +659,7 @@ fn lerc_blob<T: lerc::Sample>(
 /// NaN; float data stored one band per sample; 8-bit unassociated alpha carried as the mask.
 /// Checked against libtiff 4.7.2 on the parity matrix (`parity/`).
 #[test]
+#[cfg(feature = "deflate")]
 fn lerc() {
     let (width, height) = (29usize, 11usize);
 
@@ -796,4 +797,243 @@ fn lerc() {
         })
         .collect();
     assert_eq!(decode_all_planes(file), expected);
+}
+
+/// A baseline JPEG split the way old-style JPEG TIFFs store it.
+#[cfg(feature = "jpeg")]
+struct JpegParts {
+    /// The whole stream.
+    stream: Vec<u8>,
+    /// SOI up to the end of the SOS header.
+    header: Vec<u8>,
+    /// Quantization tables by id, 64 bytes each.
+    q: Vec<(u8, Vec<u8>)>,
+    /// Huffman tables by class and id: 16 counts, then the values.
+    huffman: Vec<(u8, Vec<u8>)>,
+    /// The entropy-coded data between restart markers.
+    intervals: Vec<Vec<u8>>,
+}
+
+#[cfg(feature = "jpeg")]
+fn jpeg_parts(stream: Vec<u8>) -> JpegParts {
+    let (mut q, mut huffman) = (Vec::new(), Vec::new());
+    let mut pos = 2;
+    loop {
+        assert_eq!(stream[pos], 0xFF);
+        let marker = stream[pos + 1];
+        let len = usize::from(u16::from_be_bytes([stream[pos + 2], stream[pos + 3]]));
+        let body = &stream[pos + 4..pos + 2 + len];
+        match marker {
+            0xDB => {
+                for table in body.chunks(65) {
+                    q.push((table[0], table[1..].to_vec()));
+                }
+            }
+            0xC4 => {
+                let mut rest = body;
+                while !rest.is_empty() {
+                    let values: usize = rest[1..17].iter().map(|&c| usize::from(c)).sum();
+                    huffman.push((rest[0], rest[1..17 + values].to_vec()));
+                    rest = &rest[17 + values..];
+                }
+            }
+            _ => {}
+        }
+        pos += 2 + len;
+        if marker == 0xDA {
+            break;
+        }
+    }
+    let header = stream[..pos].to_vec();
+    let mut intervals = vec![Vec::new()];
+    let mut i = pos;
+    while i < stream.len() {
+        if stream[i] == 0xFF && (0xD0..=0xD7).contains(&stream[i + 1]) {
+            intervals.push(Vec::new());
+            i += 2;
+        } else if stream[i] == 0xFF && stream[i + 1] == 0xD9 {
+            break;
+        } else {
+            intervals.last_mut().unwrap().push(stream[i]);
+            i += 1;
+        }
+    }
+    JpegParts {
+        stream,
+        header,
+        q,
+        huffman,
+        intervals,
+    }
+}
+
+/// zune-jpeg's decode of a JPEG stream, in the stream's own color space.
+#[cfg(feature = "jpeg")]
+fn zune_decode(stream: &[u8]) -> Vec<u8> {
+    use zune_jpeg::zune_core;
+    let mut decoder =
+        zune_jpeg::JpegDecoder::new(zune_core::bytestream::ZCursor::new(stream.to_vec()));
+    decoder.decode_headers().unwrap();
+    let colorspace = decoder.input_colorspace().unwrap();
+    decoder.set_options(
+        zune_core::options::DecoderOptions::default().jpeg_set_out_colorspace(colorspace),
+    );
+    decoder.decode().unwrap()
+}
+
+/// Old-style JPEG (6) in the three layouts libtiff reads: the tables in JPEGQTables,
+/// JPEGDCTables and JPEGACTables with one restart interval per strip; the header in the
+/// JPEGInterchangeFormat stream with the strips holding the scan; and the whole JPEG in that
+/// stream. Gray, 4:4:4, 4:2:2 and a 4:2:0 tile wider and taller than the image. Each must
+/// decode as zune-jpeg decodes the original stream (libtiff 4.7.2 agrees on the luma of its
+/// five old-style JPEG test files to within 1).
+#[test]
+#[cfg(feature = "jpeg")]
+fn old_style_jpeg() {
+    let (width, height) = (40usize, 32usize);
+    let pixel =
+        |x: usize, y: usize, c: usize| ((x * 7 + y * 5 + c * 60 + (x * y) % 13) % 256) as u8;
+
+    // (samples, sampling factors, rows per strip, tiled)
+    let cases = [
+        (1usize, (1u8, 1u8), 8usize, false),
+        (3, (1, 1), 8, false),
+        (3, (2, 1), 8, false),
+        (3, (2, 2), 32, false),
+        (3, (2, 2), 48, true),
+    ];
+    for (samples, (sub_h, sub_v), rows, tiled) in cases {
+        // Tiles are 48x48: the JPEG covers the whole padded tile.
+        let (enc_w, enc_h) = if tiled { (48, 48) } else { (width, height) };
+        let pixels: Vec<u8> = (0..enc_w * enc_h * samples)
+            .map(|i| pixel(i / samples % enc_w, i / samples / enc_w, i % samples))
+            .collect();
+        let mut stream = Vec::new();
+        let mut encoder = jpeg_encoder::Encoder::new(&mut stream, 90);
+        let color = if samples == 1 {
+            jpeg_encoder::ColorType::Luma
+        } else {
+            encoder.set_sampling_factor(
+                jpeg_encoder::SamplingFactor::from_factors(sub_h, sub_v).unwrap(),
+            );
+            jpeg_encoder::ColorType::Ycbcr
+        };
+        let strips = enc_h.div_ceil(rows);
+        if strips > 1 {
+            let mcus = enc_w.div_ceil(8 * usize::from(sub_h)) * (rows / (8 * usize::from(sub_v)));
+            encoder.set_restart_interval(mcus as u16);
+        }
+        encoder
+            .encode(&pixels, enc_w as u16, enc_h as u16, color)
+            .unwrap();
+        let parts = jpeg_parts(stream);
+        assert_eq!(parts.intervals.len(), strips);
+
+        let decoded = zune_decode(&parts.stream);
+        let expected: Vec<u8> = decoded
+            .chunks(enc_w * samples)
+            .take(height)
+            .flat_map(|row| row[..width * samples].to_vec())
+            .collect();
+
+        let photometric = if samples == 1 { 1 } else { 6 };
+        let base = || {
+            let file = synth::image(width as u32, height as u32, 8, samples as u16, 6)
+                .short(262, &[photometric])
+                .short(512, &[1]);
+            let file = if samples == 3 {
+                file.short(530, &[u16::from(sub_h), u16::from(sub_v)])
+            } else {
+                file
+            };
+            if tiled {
+                file.short(322, &[enc_w as u16]).short(323, &[enc_h as u16])
+            } else {
+                file.long(278, &[rows as u32])
+            }
+        };
+        let chunks = |file: synth::Tiff, chunks: Vec<Vec<u8>>| {
+            if tiled {
+                file.tiles(chunks)
+            } else {
+                file.strips(chunks)
+            }
+        };
+
+        // Tables in tags: each component points at its own table or repeats the previous one.
+        let mut data = Vec::new();
+        let mut table_offsets = |tables: Vec<Vec<u8>>| -> Vec<u32> {
+            tables
+                .into_iter()
+                .map(|t| {
+                    let at = synth::DATA_OFFSET + data.len() as u32;
+                    data.extend_from_slice(&t);
+                    at
+                })
+                .collect()
+        };
+        let by_component = |tables: &[(u8, Vec<u8>)], class: u8| -> Vec<Vec<u8>> {
+            (0..samples)
+                .map(|c| {
+                    let id = if c == 0 { 0 } else { 1 };
+                    let table = tables.iter().find(|t| t.0 == class | id).unwrap();
+                    table.1.clone()
+                })
+                .collect()
+        };
+        let dedup = |offsets: Vec<u32>| -> Vec<u32> {
+            // Components 1 and 2 share a table: point both at the first copy.
+            offsets
+                .iter()
+                .enumerate()
+                .map(|(c, &o)| if c == 2 { offsets[1] } else { o })
+                .collect()
+        };
+        let q = dedup(table_offsets(by_component(&parts.q, 0)));
+        let dc = dedup(table_offsets(by_component(&parts.huffman, 0)));
+        let ac = dedup(table_offsets(by_component(&parts.huffman, 16)));
+        let file = chunks(
+            base()
+                .data(data)
+                .long(519, &q)
+                .long(520, &dc)
+                .long(521, &ac),
+            parts.intervals.clone(),
+        );
+        assert_eq!(
+            decode_all_planes(file.build()),
+            expected,
+            "tables {samples} {sub_h}x{sub_v}"
+        );
+
+        // The header in the interchange-format stream, the scan in the strips.
+        let file = chunks(
+            base()
+                .data(parts.header.clone())
+                .long(513, &[synth::DATA_OFFSET])
+                .long(514, &[parts.header.len() as u32]),
+            parts.intervals.clone(),
+        );
+        assert_eq!(
+            decode_all_planes(file.build()),
+            expected,
+            "header {samples} {sub_h}x{sub_v}"
+        );
+
+        // The whole JPEG in the interchange-format stream (one strip, which repeats the scan).
+        if strips == 1 {
+            let file = chunks(
+                base()
+                    .data(parts.stream.clone())
+                    .long(513, &[synth::DATA_OFFSET])
+                    .long(514, &[parts.stream.len() as u32]),
+                parts.intervals.clone(),
+            );
+            assert_eq!(
+                decode_all_planes(file.build()),
+                expected,
+                "whole {samples} {sub_h}x{sub_v}"
+            );
+        }
+    }
 }

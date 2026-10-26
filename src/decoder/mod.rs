@@ -20,6 +20,8 @@ pub mod ifd;
 mod image;
 mod lerc_decode;
 mod logluv;
+#[cfg(feature = "jpeg")]
+mod ojpeg;
 mod stream;
 mod tag_reader;
 

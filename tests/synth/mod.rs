@@ -8,6 +8,9 @@ pub const ASCII: u16 = 2;
 pub const SHORT: u16 = 3;
 pub const LONG: u16 = 4;
 
+/// Where [`Tiff::data`] lands in the file.
+pub const DATA_OFFSET: u32 = 8;
+
 /// One IFD entry: tag, field type, count and the little-endian value bytes.
 pub struct Entry {
     tag: u16,
@@ -20,6 +23,7 @@ pub struct Entry {
 #[derive(Default)]
 pub struct Tiff {
     entries: Vec<Entry>,
+    data: Vec<u8>,
     chunks: Vec<Vec<u8>>,
     tiled: bool,
     omit_counts: bool,
@@ -78,6 +82,13 @@ impl Tiff {
         self
     }
 
+    /// Raw bytes stored at file offset [`DATA_OFFSET`], ahead of the chunks, for tags that
+    /// point into the file.
+    pub fn data(mut self, data: Vec<u8>) -> Self {
+        self.data = data;
+        self
+    }
+
     /// Leave out StripByteCounts / TileByteCounts.
     pub fn without_byte_counts(mut self) -> Self {
         self.omit_counts = true;
@@ -86,6 +97,10 @@ impl Tiff {
 
     pub fn build(mut self) -> Vec<u8> {
         let mut out = b"II\x2a\x00\0\0\0\0".to_vec();
+        out.extend_from_slice(&self.data);
+        if out.len() % 2 == 1 {
+            out.push(0);
+        }
         let mut offsets = Vec::new();
         for chunk in &self.chunks {
             offsets.push(out.len() as u32);
