@@ -13,7 +13,7 @@ cargo build --quiet --release --all-features --example parity_dump --manifest-pa
 # Run a copy, so rebuilding during the sweep cannot change the binary under it, and record the
 # commit it was built from (plus whether the working copy had changes).
 FORK="$OUT/parity_dump"
-cp "$ROOT/target/release/examples/parity_dump" "$FORK"
+cp "${CARGO_TARGET_DIR:-$ROOT/target}/release/examples/parity_dump" "$FORK"
 BUILT="$(git -C "$ROOT" rev-parse HEAD) dirty-files=$(git -C "$ROOT" status --porcelain --untracked-files=no | wc -l)"
 LIST="$OUT/inputs.txt"
 : > "$LIST"
