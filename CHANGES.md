@@ -68,6 +68,9 @@ tiles and planar layouts):
 - CCITT RLEW (32771) decodes: Modified Huffman with rows on 16-bit
   boundaries. libtiff misreads rows that end with 16 or more bits in its
   buffer; image-tiff keeps to the alignment (`parity/README.md`).
+- JBIG (34661) decodes: the lowest resolution layer of T.82, checked against
+  the recommendation's test data and 745 libtiff/jbigkit-written files.
+  Differential layers are reported unsupported.
 - NeXT (32766) 2-bit gray decodes.
 - ThunderScan (32809) 4-bit decodes (`6d2cc3c2`).
 - The horizontal and floating-point predictors are undone before discarded
