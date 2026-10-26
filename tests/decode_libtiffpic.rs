@@ -194,11 +194,13 @@ const FILES: &[(&str, Option<u32>)] = &[
     ("tests/libtiffpic/quad-lzw.tif", Some(0x6055f9ee)), // old-style (LSB) LZW
     ("tests/libtiffpic/quad-tile.tif", Some(0x6055f9ee)),
     ("tests/libtiffpic/README", None),
-    ("tests/libtiffpic/smallliz.tif", Some(0)), // unsupported Old JPEG compression (type 6)
+    // Old-style JPEG (6): the JPEGInterchangeFormat stream holds the whole JPEG.
+    ("tests/libtiffpic/smallliz.tif", Some(0xf9daaabf)),
     ("tests/libtiffpic/strike.tif", Some(0x016b0f6a)),
-    ("tests/libtiffpic/text.tif", Some(0)), // unsupported compression
+    ("tests/libtiffpic/text.tif", Some(0)), // ThunderScan data shorter than its rows; libtiff fails too
     ("tests/libtiffpic/ycbcr-cat.tif", Some(0x388a9d8f)),
-    ("tests/libtiffpic/zackthecat.tif", Some(0)), // unsupported Old JPEG compression (type 6)
+    // Old-style JPEG (6): tables from the JPEGQTables/DCTables/ACTables tags, one tile.
+    ("tests/libtiffpic/zackthecat.tif", Some(0x7ec06262)),
 ];
 
 fn main() {
