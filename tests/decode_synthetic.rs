@@ -1276,7 +1276,7 @@ fn jbig_recommendation_tests() {
                 l0: 128,
                 mx: 8,
                 tpbon: true,
-                at_moves: vec![(9, 0, 8)],
+                at_moves: vec![(0, 9, 0, 8)],
                 ..Default::default()
             },
             [252_557, 253_593, 253_625, 253_633, 253_653],
@@ -1292,7 +1292,8 @@ fn jbig_recommendation_tests() {
                 pscd,
                 sde,
                 bid,
-                bie
+                bie,
+                per_layer: vec![[scd, pscd, sde]],
             },
             "two_line {} tpbon {}",
             params.two_line,
@@ -1306,6 +1307,48 @@ fn jbig_recommendation_tests() {
             params.two_line
         );
     }
+}
+
+/// T.82 7.2.3: the recommendation's progressive test on its artificial image, six
+/// differential layers with typical and deterministic prediction. The test encoder reproduces
+/// every byte count of Table 32, and the decoder returns the image from the differential
+/// layers.
+#[test]
+fn jbig_recommendation_progressive_test() {
+    let image = synth::jbig::artificial_image();
+    let params = synth::jbig::Params {
+        layers: 6,
+        l0: 2,
+        mx: 8,
+        tpbon: true,
+        tpdon: true,
+        dpon: true,
+        // Table 31: AT moves in layer 6 at stripe 9 and in layer 5 at stripe 10.
+        at_moves: vec![(6, 9, 0, 8), (5, 10, 0, 4)],
+        ..Default::default()
+    };
+    let (_, counts) = synth::jbig::encode(&image, &params);
+    assert_eq!(
+        counts,
+        synth::jbig::Counts {
+            scd: 277_873,
+            pscd: 279_054,
+            sde: 279_278,
+            bid: 279_294,
+            bie: 279_314,
+            per_layer: vec![
+                [113, 114, 146],
+                [370, 373, 405],
+                [1_430, 1_434, 1_466],
+                [4_994, 5_010, 5_042],
+                [16_565, 16_634, 16_666],
+                [65_584, 65_905, 65_937],
+                [188_817, 189_584, 189_616],
+            ],
+        }
+    );
+    let file = jbig_tiff(1960, &[(image.clone(), params)], 1);
+    assert_eq!(decode_all_planes(file), synth::ccitt::pack(&image));
 }
 
 /// JBIG (34661) as libtiff stores it, beyond its own encoder's defaults: two- and three-line
@@ -1351,18 +1394,43 @@ fn jbig() {
         synth::jbig::Params {
             tpbon: true,
             reset: true,
-            at_moves: vec![(1, 3, 6), (3, 0, 0)],
+            at_moves: vec![(0, 1, 3, 6), (0, 3, 0, 0)],
             ..base.clone()
         },
         synth::jbig::Params {
             two_line: true,
-            at_moves: vec![(2, 0, 7)],
+            at_moves: vec![(0, 2, 0, 7)],
             comment: true,
             ..base.clone()
         },
         synth::jbig::Params {
             l0: 3,
             tpbon: true,
+            ..base.clone()
+        },
+        // Differential layers, with typical and deterministic prediction, resets and an AT
+        // movement in a differential layer.
+        synth::jbig::Params {
+            layers: 2,
+            l0: 2,
+            tpbon: true,
+            tpdon: true,
+            dpon: true,
+            ..base.clone()
+        },
+        synth::jbig::Params {
+            layers: 1,
+            l0: 4,
+            two_line: true,
+            tpdon: true,
+            reset: true,
+            at_moves: vec![(1, 1, 2, 3)],
+            ..base.clone()
+        },
+        synth::jbig::Params {
+            layers: 3,
+            l0: 1,
+            dpon: true,
             ..base.clone()
         },
     ];
