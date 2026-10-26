@@ -31,18 +31,7 @@ impl<R> LogLuv24<R> {
             let [a, b, c] = ch.map(u32::from);
 
             let raw = a << 16 | b << 8 | c;
-            let l = (raw >> 14) & 0x3ff;
-            let uv = decode_quantized_uv(raw & 0x3fff);
-
-            let by = dequantize_24_luma(l);
-            let (u, v) = dequantize_24(uv);
-
-            let s = 1. / (6. * u - 16. * v + 12.);
-            let x = 9. * u * s;
-            let y = 4. * v * s;
-
-            let bx = x / y * by;
-            let bz = (1. - x - y) / y * by;
+            let [bx, by, bz] = luv24_to_xyz(raw);
 
             let [r, g, b] = xyz_to_rgb([bx, by, bz]);
 
@@ -88,7 +77,9 @@ fn packbits_decode<R: Read, const N: usize>(
     buf: &mut [[u8; N]],
 ) -> std::io::Result<()> {
     let expected = buf.len();
-    for offset in (0..N).rev() {
+    // The planes run from the most significant byte down (libtiff's `shft` loops in
+    // LogL16Decode/LogLuvDecode32), matching the big-endian reads in `expand_row`.
+    for offset in 0..N {
         let mut i = 0;
         let mut code = [0u8; 1];
 
@@ -165,7 +156,6 @@ impl<R: Read> LogLuv32<R> {
     }
 
     fn expand_row(row: &mut [u8]) {
-        let uvscale = 1.0 / 410.0;
         let n_pixels = row.len() / 12;
 
         // Work backwards, the 32-bit compressed raw data is at the front of the row buffer and
@@ -173,18 +163,7 @@ impl<R: Read> LogLuv32<R> {
         for i in (0..n_pixels).rev() {
             let raw = row.as_chunks_mut::<4>().0[i];
 
-            let l = u16::from(raw[0]) << 8 | u16::from(raw[1]);
-            let by = log16_to_y(l);
-
-            let u = uvscale * (f32::from(raw[2]) + 0.5);
-            let v = uvscale * (f32::from(raw[3]) + 0.5);
-
-            let s = 1. / (6. * u - 16. * v + 12.);
-            let x = 9. * u * s;
-            let y = 4. * v * s;
-
-            let bx = x / y * by;
-            let bz = (1. - x - y) / y * by;
+            let [bx, by, bz] = luv32_to_xyz(u32::from_be_bytes(raw));
 
             let [r, g, b] = xyz_to_rgb([bx, by, bz]);
             let into = &mut row.as_chunks_mut::<12>().0[i];
@@ -253,7 +232,7 @@ impl<R: Read> LogLuv16<R> {
             let raw = row.as_chunks_mut::<2>().0[i];
 
             let l = u16::from(raw[0]) << 8 | u16::from(raw[1]);
-            let by = log16_to_y(l);
+            let by = log16_to_y(l) as f32;
 
             let into = &mut row.as_chunks_mut::<4>().0[i];
             into[0..4].copy_from_slice(&f32::to_ne_bytes(by));
@@ -491,38 +470,74 @@ fn decode_quantized_uv(uv: u32) -> (u8, u8) {
     (u_index as u8, v_index as u8)
 }
 
-fn dequantize_24_luma(l: u32) -> f32 {
-    if l == 0 {
-        0.0
-    } else {
-        let le = (l & 0x3ff) as f32;
-        let exponent = ((le / 64.0).floor() as i32) - 24;
-        let mantissa = le - (exponent as f32 + 24.0) * 64.0;
-        (mantissa + 64.0) / 64.0 * 2f32.powi(exponent)
-    }
-}
+// The conversions below follow libtiff's tif_luv.c (LogL16toY, LogL10toY, uv_decode,
+// LogLuv24toXYZ, LogLuv32toXYZ) operation for operation: double precision, results cast to f32.
 
-fn dequantize_24((u, v): (u8, u8)) -> (f32, f32) {
-    let v_f = UV_VSTART + (v as f32) * UV_QUANTIZATION_WIDTH;
-    let u_row = &UV_ROWS[v as usize];
-    let u_f = u_row.ustart + (u as f32) * UV_QUANTIZATION_WIDTH;
-    (u_f, v_f)
-}
+/// Neutral chroma used for an out-of-range 24-bit color index.
+const U_NEU: f64 = 0.210526316;
+const V_NEU: f64 = 0.473684211;
+/// 32-bit LogLuv quantizes u' and v' in steps of 1/410.
+const UVSCALE: f64 = 410.;
 
-fn log16_to_y(l: u16) -> f32 {
-    if l == 0 {
+/// Luminance from 16-bit LogL (sign bit plus 15-bit log).
+fn log16_to_y(l: u16) -> f64 {
+    let le = f64::from(l & 0x7fff);
+    if le == 0.0 {
         return 0.0;
     }
-
-    let le = f32::from(l & 0x7fff);
-    //     Y = exp(M_LN2 / 256. * (Le + .5) - M_LN2 * 64.);
-    let y = (std::f32::consts::LN_2 / 256.0 * (le + 0.5) - std::f32::consts::LN_2 * 64.0).exp();
-
+    let y = (std::f64::consts::LN_2 / 256. * (le + 0.5) - std::f64::consts::LN_2 * 64.).exp();
     if l & 0x8000 != 0 {
         -y
     } else {
         y
     }
+}
+
+/// Luminance from the 10-bit log of 24-bit LogLuv.
+fn log10_to_y(l: u32) -> f64 {
+    if l == 0 {
+        return 0.0;
+    }
+    (std::f64::consts::LN_2 / 64. * (f64::from(l) + 0.5) - std::f64::consts::LN_2 * 12.).exp()
+}
+
+/// (u', v') at the center of a 24-bit LogLuv color cell, `None` for an index past the table.
+fn uv_decode(c: u32) -> Option<(f64, f64)> {
+    if c >= u32::from(UV_NDIVS) {
+        return None;
+    }
+    let (ui, vi) = decode_quantized_uv(c);
+    let row = &UV_ROWS[usize::from(vi)];
+    let width = f64::from(UV_QUANTIZATION_WIDTH);
+    let u = f64::from(row.ustart) + (f64::from(ui) + 0.5) * width;
+    let v = f64::from(UV_VSTART) + (f64::from(vi) + 0.5) * width;
+    Some((u, v))
+}
+
+/// XYZ from (u', v') and luminance; zero for non-positive luminance.
+fn uv_to_xyz(l: f64, u: f64, v: f64) -> [f32; 3] {
+    if l <= 0. {
+        return [0.0; 3];
+    }
+    let s = 1. / (6. * u - 16. * v + 12.);
+    let x = 9. * u * s;
+    let y = 4. * v * s;
+    [(x / y * l) as f32, l as f32, ((1. - x - y) / y * l) as f32]
+}
+
+/// XYZ from a 24-bit LogLuv pixel: 10-bit log luminance, 14-bit color index.
+fn luv24_to_xyz(p: u32) -> [f32; 3] {
+    let l = log10_to_y(p >> 14 & 0x3ff);
+    let (u, v) = uv_decode(p & 0x3fff).unwrap_or((U_NEU, V_NEU));
+    uv_to_xyz(l, u, v)
+}
+
+/// XYZ from a 32-bit LogLuv pixel: 16-bit LogL, then 8-bit u' and v'.
+fn luv32_to_xyz(p: u32) -> [f32; 3] {
+    let l = log16_to_y((p >> 16) as u16);
+    let u = 1. / UVSCALE * (f64::from(p >> 8 & 0xff) + 0.5);
+    let v = 1. / UVSCALE * (f64::from(p & 0xff) + 0.5);
+    uv_to_xyz(l, u, v)
 }
 
 fn xyz_to_rgb([l, u, v]: [f32; 3]) -> [f32; 3] {

@@ -185,7 +185,8 @@ const FILES: &[(&str, Option<u32>)] = &[
     ("tests/libtiffpic/jim___gg.tif", Some(0x8c6a5e8f)),
     ("tests/libtiffpic/ladoga.tif", Some(0x9b118511)),
     ("tests/libtiffpic/off_l16.tif", Some(0)), // LogLuv decoder output varies across platforms
-    ("tests/libtiffpic/off_luv24.tif", Some(0x2bee71a2)),
+    // Bit-identical to libtiff 4.7.2 (its XYZ through the f32 XYZ-to-sRGB matrix, parity/).
+    ("tests/libtiffpic/off_luv24.tif", Some(0xb6ce05ce)),
     ("tests/libtiffpic/off_luv32.tif", Some(0)), // LogLuv decoder output varies across platforms
     ("tests/libtiffpic/oxford.tif", Some(0x355d2e3e)),
     ("tests/libtiffpic/pc260001.tif", Some(0xdb56b753)),
