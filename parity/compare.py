@@ -184,6 +184,10 @@ def compare_one(name, n, d):
         else:
             f_arr[..., 0::2] = maxv - f_arr[..., 0::2]
         notes.append("WhiteIsZero un-inverted")
+    if f_arr.shape != l_arr.shape and f_arr.shape[0] < l_arr.shape[0] and f_arr.shape[1:] == l_arr.shape[1:]:
+        # Planar: the fork returns the photometric (and alpha) planes, not unspecified extras.
+        notes.append(f"fork keeps {f_arr.shape[0]} of {l_arr.shape[0]} planes")
+        l_arr = l_arr[: f_arr.shape[0]]
     if f_arr.shape != l_arr.shape:
         lt_spp, f_spp = int(lt["spp"]), l_arr.shape[2]
         if (f_arr.shape[0] == l_arr.shape[0] == 1 and f_arr.shape[1] == l_arr.shape[1]
