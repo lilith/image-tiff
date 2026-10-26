@@ -1635,7 +1635,16 @@ impl Image {
                 reader.read_exact(&mut packed)?;
 
                 let out_row = &mut row[..data_row_bytes];
-                unpack_bits(&packed, out_row, tiff_bps, samples_per_data_row, out_bps);
+                if tiff_bps == 24 {
+                    unpack_24(
+                        &packed,
+                        out_row,
+                        samples_per_data_row,
+                        decompressed_byte_order,
+                    );
+                } else {
+                    unpack_bits(&packed, out_row, tiff_bps, samples_per_data_row, out_bps);
+                }
 
                 // Unpacked values are in native byte order, so pass native to skip
                 // endianness conversion while still applying the predictor.
@@ -1880,6 +1889,21 @@ fn decode_jpeg(jpeg_data: Vec<u8>) -> TiffResult<Vec<u8>> {
 /// # Panics
 ///
 /// Panics if `dst` is too small for `num_samples` output samples.
+/// 24-bit samples, which libtiff reads as three bytes in the file's byte order (it swaps the
+/// triples of little-endian files), not as a big-endian bit stream like other odd depths.
+/// Writes native-endian u32 samples.
+fn unpack_24(src: &[u8], dst: &mut [u8], num_samples: usize, byte_order: ByteOrder) {
+    let (triples, _) = src.as_chunks::<3>();
+    let (out, _) = dst.as_chunks_mut::<4>();
+    for (o, &[a, b, c]) in out.iter_mut().zip(triples).take(num_samples) {
+        let v = match byte_order {
+            ByteOrder::LittleEndian => u32::from_le_bytes([a, b, c, 0]),
+            ByteOrder::BigEndian => u32::from_be_bytes([0, a, b, c]),
+        };
+        *o = v.to_ne_bytes();
+    }
+}
+
 fn unpack_bits(
     src: &[u8],
     dst: &mut [u8],

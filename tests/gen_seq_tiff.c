@@ -20,9 +20,20 @@
 #define H 16
 #define NPIX (W * H)
 
-/* Pack a single sample value into an MSB-first bit stream at the given bit offset. */
+/* Pack a single sample value into an MSB-first bit stream at the given bit offset.
+ * 24-bit samples are the exception: libtiff holds them in memory as three bytes in host order
+ * and swaps the triples when the file's byte order differs, so they are written that way. */
 static void pack_value(uint8_t *buf, int *bit_offset, uint32_t val, int bits)
 {
+    if (bits == 24) {
+        const uint16_t probe = 1;
+        int little = *(const uint8_t *)&probe == 1;
+        uint8_t *p = buf + *bit_offset / 8;
+        for (int i = 0; i < 3; i++)
+            p[i] = (uint8_t)(val >> (little ? 8 * i : 8 * (2 - i)));
+        *bit_offset += 24;
+        return;
+    }
     /* Write bits MSB-first */
     for (int i = bits - 1; i >= 0; i--) {
         int byte_idx = *bit_offset / 8;
@@ -34,7 +45,7 @@ static void pack_value(uint8_t *buf, int *bit_offset, uint32_t val, int bits)
 }
 
 /* Write a single-channel grayscale TIFF with N-bit packed samples.
- * libtiff expects packed MSB-first data for all non-standard bit depths. */
+ * libtiff expects packed MSB-first data for non-standard bit depths other than 24. */
 static int write_gray(const char *path, int bits,
                       uint16_t photometric, uint16_t predictor)
 {

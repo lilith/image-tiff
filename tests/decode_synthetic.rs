@@ -1606,3 +1606,83 @@ fn ifd_cycles_stop_after_the_closing_ifd() {
         ));
     }
 }
+
+/// A one-strip uncompressed gray TIFF in either byte order, built by hand (the synth builder
+/// writes little-endian files only).
+fn gray_tiff(big_endian: bool, width: u32, height: u32, bits: u16, data: &[u8]) -> Vec<u8> {
+    let u16b = |v: u16| {
+        if big_endian {
+            v.to_be_bytes()
+        } else {
+            v.to_le_bytes()
+        }
+    };
+    let u32b = |v: u32| {
+        if big_endian {
+            v.to_be_bytes()
+        } else {
+            v.to_le_bytes()
+        }
+    };
+    let mut out = if big_endian {
+        b"MM".to_vec()
+    } else {
+        b"II".to_vec()
+    };
+    out.extend_from_slice(&u16b(42));
+    let ifd = 8 + data.len() as u32 + (data.len() as u32 & 1);
+    out.extend_from_slice(&u32b(ifd));
+    out.extend_from_slice(data);
+    if data.len() % 2 == 1 {
+        out.push(0);
+    }
+    // (tag, type, value): SHORT values sit in the first two bytes of the value field.
+    let entries: [(u16, u16, u32); 8] = [
+        (256, 4, width),
+        (257, 4, height),
+        (258, 3, u32::from(bits)),
+        (259, 3, 1),
+        (262, 3, 1),
+        (273, 4, 8),
+        (278, 4, height),
+        (279, 4, data.len() as u32),
+    ];
+    out.extend_from_slice(&u16b(entries.len() as u16));
+    for (tag, ty, value) in entries {
+        out.extend_from_slice(&u16b(tag));
+        out.extend_from_slice(&u16b(ty));
+        out.extend_from_slice(&u32b(1));
+        if ty == 3 {
+            out.extend_from_slice(&u16b(value as u16));
+            out.extend_from_slice(&[0, 0]);
+        } else {
+            out.extend_from_slice(&u32b(value));
+        }
+    }
+    out.extend_from_slice(&[0; 4]);
+    out
+}
+
+/// 24-bit samples are three bytes in the file's byte order, as libtiff reads them (it swaps
+/// the triples of little-endian files); they were read as a big-endian bit stream, so
+/// little-endian files decoded with their bytes reversed.
+#[test]
+fn twenty_four_bit_samples_follow_the_byte_order() {
+    let values = [1u32, 0x00_0102, 0xAB_CDEF, 0xFF_FFFF, 0x80_0000, 0x12_3456];
+    for big_endian in [false, true] {
+        let data: Vec<u8> = values
+            .iter()
+            .flat_map(|v| {
+                let [_, a, b, c] = v.to_be_bytes();
+                if big_endian {
+                    [a, b, c]
+                } else {
+                    [c, b, a]
+                }
+            })
+            .collect();
+        let file = gray_tiff(big_endian, 3, 2, 24, &data);
+        let expected: Vec<u8> = values.iter().flat_map(|v| v.to_ne_bytes()).collect();
+        assert_eq!(decode_all_planes(file), expected, "big endian {big_endian}");
+    }
+}
