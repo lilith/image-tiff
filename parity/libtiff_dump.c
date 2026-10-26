@@ -68,8 +68,9 @@ static int dump_directory(TIFF *t, const char *prefix, int n) {
     uint16_t photometric = 0;
     int has_photometric = TIFFGetField(t, TIFFTAG_PHOTOMETRIC, &photometric);
     uint16_t sub_h = 1, sub_v = 1;
-    if (has_photometric && photometric == PHOTOMETRIC_YCBCR && compression != COMPRESSION_JPEG &&
-        compression != COMPRESSION_OJPEG)
+    /* Old-style JPEG returns the raw subsampled components (libtiff corrects the tag to the
+     * JPEG frame's sampling factors); new-style JPEG is read as RGB below. */
+    if (has_photometric && photometric == PHOTOMETRIC_YCBCR && compression != COMPRESSION_JPEG)
         TIFFGetFieldDefaulted(t, TIFFTAG_YCBCRSUBSAMPLING, &sub_h, &sub_v);
     uint16_t extra_count = 0;
     uint16_t *extra = NULL;

@@ -17,7 +17,10 @@ Result classes:
   both-fail        neither decodes
   fork-missing     libtiff has this directory, image-tiff stopped before it
   jpeg             JPEG: libtiff converts YCbCr to RGB, image-tiff returns YCbCr; reports the
-                   difference after converting image-tiff's samples with the JFIF formula
+                   difference after converting image-tiff's samples with the JFIF formula.
+                   Old-style JPEG: both sides YCbCr (libtiff's raw components with nearest
+                   chroma, image-tiff's upsampled by its JPEG decoder); luma and chroma
+                   differences reported separately
   skipped          not comparable yet (reason given)
 """
 import os
@@ -163,7 +166,7 @@ def compare_one(name, n, d):
         return "skipped", info, err
     compression = lt["compression"]
     photometric = lt["photometric"]
-    if compression in ("6", "7"):
+    if compression == "7":
         return "jpeg", info, jpeg_diff(lt, lt_raw, f_arr, kind)
     if lt["layout"] == "ycbcr-blocks":
         w, h = int(lt["width"]), int(lt["height"])
@@ -174,6 +177,8 @@ def compare_one(name, n, d):
         l_arr = upsample_blocks(lt_raw, lt, dims)
     else:
         l_arr = libtiff_samples(lt, lt_raw)
+    if compression == "6":
+        return "jpeg", info, ojpeg_diff(l_arr, f_arr, int(lt["spp"]))
     notes = []
     # WhiteIsZero: the fork returns max - v for unsigned gray.
     if photometric == "0" and kind in ("Gray", "GrayA") and fk.get("sample_format") == "Uint":
@@ -228,6 +233,18 @@ def jpeg_diff(lt, lt_raw, f_arr, kind):
         return f"shape fork {f.shape} libtiff {l_arr.shape}"
     d = np.abs(f - l_arr)
     return f"max |d| {d.max():.0f}, {int((d > 0).sum())} of {d.size} samples differ"
+
+
+def ojpeg_diff(l_arr, f_arr, spp):
+    """Old-style JPEG: libtiff's components against image-tiff's, luma and chroma apart."""
+    if f_arr.shape != l_arr.shape:
+        return f"shape fork {f_arr.shape} libtiff {l_arr.shape}"
+    d = np.abs(f_arr.astype(np.int64) - l_arr.astype(np.int64))
+    parts = [("Y", d[..., 0::spp])]
+    if spp == 3:
+        parts.append(("CbCr", np.concatenate([d[..., 1::3], d[..., 2::3]], axis=-1)))
+    return "; ".join(f"{name} max |d| {p.max()}, {int((p > 0).sum())} of {p.size} differ"
+                     for name, p in parts)
 
 
 def main():
