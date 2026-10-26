@@ -55,7 +55,7 @@ pub(crate) fn decode(
                     while count > 0 && pixels < width && pixels / 4 < row_bytes {
                         let byte = &mut row[pixels / 4];
                         let shift = 6 - 2 * (pixels % 4);
-                        if pixels % 4 == 0 {
+                        if pixels.is_multiple_of(4) {
                             *byte = gray << shift;
                         } else {
                             *byte |= gray << shift;
