@@ -49,7 +49,8 @@ for r in rows:
     if r[2] == "exact":
         continue
     name = re.sub(r"^\d+_", "", r[0])
-    base = name.split("__")[0] if "__" in name else name
+    # Numbered generator files (jbigkit sets) group by their pattern.
+    base = name.split("__")[0] if "__" in name else re.sub(r"\d+", "N", name)
     detail = re.sub(r"\d+", "N", r[4])[:90]
     groups[(r[2], codec(name) if "__" in name else base, detail)].append(name)
 for (cls, what, detail), names in sorted(groups.items()):

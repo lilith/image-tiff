@@ -23,9 +23,9 @@
   compares every directory; `parity/gen_matrix.sh` and `parity/gen_jbig.sh` make the corpora;
   `parity/summarize.py <out>` groups the results. Deliberate divergences are listed at the end
   of `parity/README.md`.
-- `run.sh` calls `target/release/examples/parity_dump` once per file for the whole sweep (10+
-  minutes): rebuilding during a sweep swaps the binary under it. Build experiments with
-  `CARGO_TARGET_DIR=~/tmp/<name>` while a sweep runs.
+- `run.sh` copies the fork's `parity_dump` into the output directory and records the commit it
+  was built from; before 2026-10-26 it ran `target/release/...` directly, so a rebuild during a
+  sweep changed the binary mid-run and the header named the commit at the end.
 - libtiff stores and reads JBIG (34661) strips bit-reversed under FillOrder 1 (the codec sets
   TIFF_NOBITREV, then reverses when the fill order matches the handle's MSB2LSB default).
 - jbigkit 2.1 writes three-line JBIG with one-line stripes (L0 = 1) and no TPBON that its own

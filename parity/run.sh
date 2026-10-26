@@ -10,9 +10,14 @@ PREFIX=$("$ROOT/parity/build-libtiff.sh")
 gcc -O2 -Wall -o "$OUT/libtiff_dump" "$ROOT/parity/libtiff_dump.c" \
   -I"$PREFIX/include" -L"$PREFIX/lib" -ltiff -Wl,-rpath,"$PREFIX/lib"
 cargo build --quiet --release --all-features --example parity_dump --manifest-path "$ROOT/Cargo.toml"
-FORK="$ROOT/target/release/examples/parity_dump"
+# Run a copy, so rebuilding during the sweep cannot change the binary under it, and record the
+# commit it was built from (plus whether the working copy had changes).
+FORK="$OUT/parity_dump"
+cp "$ROOT/target/release/examples/parity_dump" "$FORK"
+BUILT="$(git -C "$ROOT" rev-parse HEAD) dirty-files=$(git -C "$ROOT" status --porcelain --untracked-files=no | wc -l)"
 LIST="$OUT/inputs.txt"
 : > "$LIST"
+: > "$OUT/keys.tsv"
 for arg in "$@"; do
   if [ -d "$arg" ]; then
     find "$arg" -type f \( -iname '*.tif' -o -iname '*.tiff' \) | sort >> "$LIST"
@@ -32,6 +37,6 @@ while IFS= read -r f; do
 done < "$LIST"
 {
   echo "# $("$OUT/libtiff_dump" --version | head -1)"
-  echo "# image-tiff $(git -C "$ROOT" rev-parse HEAD) $(date -u +%Y-%m-%dT%H:%M:%SZ) $(hostname)"
+  echo "# image-tiff $BUILT, finished $(date -u +%Y-%m-%dT%H:%M:%SZ) on $(hostname)"
 } > "$OUT/header.txt"
 uv run --quiet --with numpy python -I "$ROOT/parity/compare.py" "$OUT/dumps" "$OUT/results.tsv"
