@@ -893,6 +893,18 @@ impl Image {
                 limits,
             )?),
 
+            // LZMA: libtiff writes one xz stream per strip/tile (lzma_stream_encoder with Delta
+            // and LZMA2 filters, no integrity check). The dictionary is bounded by the
+            // intermediate buffer limit.
+            method if method.to_u16() == 34925 => {
+                let mem_limit_kb =
+                    u32::try_from(limits.intermediate_buffer_size / 1024).unwrap_or(u32::MAX);
+                Box::new(lzma_rust2::XzReader::new_mem_limit(
+                    reader.take(compressed_length),
+                    true,
+                    mem_limit_kb,
+                ))
+            }
             // ThunderScan: 4-bit samples only, as in libtiff's ThunderSetupDecode.
             method if method.to_u16() == 32809 && samples == 1 && bits_per_sample == 4 => {
                 Box::new(super::stream::ThunderScanReader::new(

@@ -54,9 +54,15 @@ weezl = { version = "0.2.1", optional = true }
 zstd = { version = "0.14.3", optional = true }
 zrip-decode = { version = "0.8.11", features = ["paranoid"], optional = true }
 zune-jpeg = { version = "0.5.15", optional = true }
+# Fork: LZMA (Compression 34925, libtiff's xz container with a Delta filter). Not optional:
+# zenextras' zentiff selects tiff features by name and must still resolve against crates.io
+# tiff 0.11.3, which has no `lzma` feature. Without `optimization` the crate forbids unsafe code.
+lzma-rust2 = { version = "0.24.0", default-features = false, features = ["std", "xz"] }
 image-webp = {version = "0.2.4", optional = true }
 
 [dev-dependencies]
+# Encodes xz streams (with libtiff's Delta + LZMA2 filter chain) for the LZMA decode tests.
+lzma-rust2 = { version = "0.24.0", default-features = false, features = ["std", "xz", "encoder"] }
 criterion = "0.8.2"
 # Workspace standard for new benches (interleaved arms + paired statistics).
 zenbench = "0.1.7"

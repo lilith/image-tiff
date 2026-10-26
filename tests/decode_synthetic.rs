@@ -567,3 +567,61 @@ fn thunderscan() {
     let mut buffer = vec![0u8; 8];
     assert!(decoder.read_image_bytes(&mut buffer).is_err());
 }
+
+/// One xz stream with libtiff's filter chain: Delta at the sample size, then LZMA2, no check.
+fn xz(data: &[u8], delta: u32) -> Vec<u8> {
+    use std::io::Write;
+    let mut options = lzma_rust2::XzOptions::with_preset(6);
+    options.set_check_sum_type(lzma_rust2::CheckType::None);
+    options.prepend_pre_filter(lzma_rust2::FilterType::Delta, delta);
+    let mut writer = lzma_rust2::XzWriter::new(Vec::new(), options).unwrap();
+    writer.write_all(data).unwrap();
+    writer.finish().unwrap()
+}
+
+/// LZMA (34925) strips and tiles, 8- and 16-bit, with and without the horizontal predictor.
+#[test]
+fn lzma() {
+    let (width, height) = (29usize, 11usize);
+    let gray16: Vec<u16> = (0..width * height)
+        .map(|i| (i * 2311 % 65521) as u16)
+        .collect();
+    let bytes16: Vec<u8> = gray16.iter().flat_map(|v| v.to_le_bytes()).collect();
+    let file = synth::image(width as u32, height as u32, 16, 1, 34925)
+        .short(262, &[1])
+        .long(278, &[4])
+        .strips(bytes16.chunks(width * 2 * 4).map(|s| xz(s, 2)).collect())
+        .build();
+    let expected: Vec<u8> = gray16.iter().flat_map(|v| v.to_ne_bytes()).collect();
+    assert_eq!(decode_all_planes(file), expected);
+
+    let rgb: Vec<u8> = (0..width * height * 3)
+        .map(|i| (i * 7 % 253) as u8)
+        .collect();
+    let tiles: Vec<Vec<u8>> = synth::tile_chunky(&rgb, width, height, 3, 16, 16)
+        .into_iter()
+        .map(|t| {
+            let predicted: Vec<u8> = t
+                .chunks(16 * 3)
+                .flat_map(|row| {
+                    (0..row.len()).map(move |i| {
+                        if i < 3 {
+                            row[i]
+                        } else {
+                            row[i].wrapping_sub(row[i - 3])
+                        }
+                    })
+                })
+                .collect();
+            xz(&predicted, 1)
+        })
+        .collect();
+    let file = synth::image(width as u32, height as u32, 8, 3, 34925)
+        .short(262, &[2])
+        .short(317, &[2])
+        .short(322, &[16])
+        .short(323, &[16])
+        .tiles(tiles)
+        .build();
+    assert_eq!(decode_all_planes(file), rgb);
+}
