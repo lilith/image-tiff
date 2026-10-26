@@ -44,6 +44,19 @@ Fork fixes (2026-10-24), from an inventory of open upstream issues and PRs
 - `Decoder::new` reads the first directory with tiff 0.11.3's value limits, so
   a first image with more than 1 MiB of strip or tile offsets opens again.
 
+libtiff parity (2026-10-26), measured with the harness in `parity/` against
+libtiff 4.7.2 on 2,253 directories of tiffcp-written files (codecs × strips,
+tiles and planar layouts):
+- LZMA (34925) decodes: libtiff's xz streams with the Delta filter. All 204
+  matrix files match.
+- LERC (34887) decodes through `lerc-rs`, with libtiff's zlib/zstd wrappers,
+  NaN for invalid float pixels and 8-bit alpha carried as the mask. All 324
+  matrix files match.
+- ThunderScan (32809) 4-bit decodes (`6d2cc3c2`).
+- The horizontal and floating-point predictors are undone before discarded
+  extra samples are dropped (`31ea3376`); they were undone on the compacted
+  row, which gave wrong samples for e.g. RGB + unspecified extra sample.
+
 Fixes:
 - Decoding a tiled image whose width is not a multiple of the tile width no
   longer corrupts the columns below the right border tiles when extra samples

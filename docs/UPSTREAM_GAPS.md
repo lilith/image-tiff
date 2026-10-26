@@ -23,7 +23,7 @@ says what the decoded output was compared against.
 | 405c | Access to extra samples beyond the photometric ones | Open: needs API | Not today: zentiff keeps photometric samples and alpha | — |
 | 315 | zune-jpeg panic in scalar upsampler | Not reproducible: all 9 attached inputs return errors with zune-jpeg 0.5.15 | — | checked 2026-10-24 |
 | 331 | Specific image fails in oculante | Not a decoder bug: the 45181×6520 1-bit LZW sample decodes identical to tifffile | — | checked 2026-10-24 |
-| 410 | LERC compression | Open: decodable through `Decoder::with_decompressor` once a LERC decoder exists | GeoTIFF (COG) | — |
+| 410 | LERC compression | Fixed: built in through `lerc-rs`, following libtiff's tif_lerc.c | GeoTIFF (COG) | `lerc`; 324 libtiff-written files match |
 | 264, 222 | Private interfaces | Mostly addressed upstream: `Directory`, `current_ifd`, `read_directory`, `read_directory_tags` | zentiff's inventory walks IFDs itself | — |
 | 217 | Gray(1) | Supported | — | — |
 | 98, 85 | GeoTIFF, cloud (COG) | Planned in zentiff: `zentiff/docs/GEOTIFF_PYRAMIDS.md` (zenextras) | Yes | — |
