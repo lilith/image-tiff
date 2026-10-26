@@ -302,16 +302,26 @@ impl Image {
             return Err(TiffUnsupportedError::InconsistentBitsPerSample(bits_per_sample).into());
         }
 
-        let predictor = tag_reader
-            .find_tag(Tag::Predictor)?
-            .map(Value::into_u16)
-            .transpose()?
-            .map(|p| {
-                Predictor::from_u16(p)
-                    .ok_or(TiffError::FormatError(TiffFormatError::UnknownPredictor(p)))
-            })
-            .transpose()?
-            .unwrap_or(Predictor::None);
+        // Like libtiff, only the codecs that define a predictor read the tag (LZW, Deflate,
+        // LZMA, Zstandard, PixarLog); with any other compression it is ignored.
+        let uses_predictor = matches!(
+            compression_method.to_u16(),
+            5 | 8 | 0x80B2 | 34925 | 0xC350 | 32909
+        );
+        let predictor = if uses_predictor {
+            tag_reader
+                .find_tag(Tag::Predictor)?
+                .map(Value::into_u16)
+                .transpose()?
+                .map(|p| {
+                    Predictor::from_u16(p)
+                        .ok_or(TiffError::FormatError(TiffFormatError::UnknownPredictor(p)))
+                })
+                .transpose()?
+                .unwrap_or(Predictor::None)
+        } else {
+            Predictor::None
+        };
 
         let planar_config = tag_reader
             .find_tag(Tag::PlanarConfiguration)?

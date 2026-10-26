@@ -245,12 +245,14 @@ fn test_ycbcr_u8_predict_roundtrip() {
 // depths, so the TIFFs are hand-built.
 // ---------------------------------------------------------------------------
 
-/// Hand-build a minimal little-endian, single-strip, uncompressed grayscale
-/// TIFF with `Predictor::Horizontal` and the given (possibly non-standard)
-/// bit depth. `pixels` are the intended sample values; they are converted to
-/// horizontal differences modulo `2^bits` and bit-packed MSB-first with each
-/// row padded to a byte boundary — the only representation an n-bit field
-/// can hold.
+/// Hand-build a minimal little-endian, single-strip, Deflate-compressed
+/// grayscale TIFF with `Predictor::Horizontal` and the given (possibly
+/// non-standard) bit depth. `pixels` are the intended sample values; they are
+/// converted to horizontal differences modulo `2^bits` and bit-packed MSB-first
+/// with each row padded to a byte boundary — the only representation an n-bit
+/// field can hold. Deflate, because like libtiff the decoder applies the
+/// predictor only for codecs that define one.
+#[cfg(feature = "deflate")]
 fn build_gray_hpredict_tiff(
     width: u32,
     height: u32,
@@ -289,6 +291,13 @@ fn build_gray_hpredict_tiff(
         }
     }
 
+    let data = {
+        use std::io::Write;
+        let mut z = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
+        z.write_all(&data).unwrap();
+        z.finish().unwrap()
+    };
+
     // Classic little-endian TIFF: header, strip data, then a single IFD.
     let mut out = Vec::new();
     out.extend_from_slice(b"II");
@@ -304,7 +313,7 @@ fn build_gray_hpredict_tiff(
         (256, LONG, width),                   // ImageWidth
         (257, LONG, height),                  // ImageLength
         (258, SHORT, u32::from(bits)),        // BitsPerSample
-        (259, SHORT, 1),                      // Compression: none
+        (259, SHORT, 8),                      // Compression: Deflate
         (262, SHORT, u32::from(photometric)), // PhotometricInterpretation
         (273, LONG, data_offset),             // StripOffsets
         (277, SHORT, 1),                      // SamplesPerPixel
@@ -346,6 +355,7 @@ fn decode_gray_u32(tiff: Vec<u8>, bits: u8) -> Vec<u32> {
 }
 
 #[test]
+#[cfg(feature = "deflate")]
 fn test_gray12_hpredict_wraparound_exact() {
     // Pixel row [4095, 0, 1] encodes as deltas [4095, 1, 1] (mod 2^12).
     // u16 accumulation yields [4095, 4096, 4097]; reduction modulo 2^12
@@ -356,6 +366,7 @@ fn test_gray12_hpredict_wraparound_exact() {
 }
 
 #[test]
+#[cfg(feature = "deflate")]
 fn test_gray12_hpredict_wraparound_white_is_zero_exact() {
     // Same stored samples with PhotometricInterpretation = WhiteIsZero:
     // after the mod-2^12 reduction the decoder inverts as (2^12 - 1) - v.
@@ -364,6 +375,7 @@ fn test_gray12_hpredict_wraparound_white_is_zero_exact() {
 }
 
 #[test]
+#[cfg(feature = "deflate")]
 fn test_gray20_hpredict_wraparound_exact() {
     // The same wrap-around shape on the u32 storage path (17-31 bits).
     let tiff = build_gray_hpredict_tiff(3, 1, 20, 1, &[0xF_FFFF, 0, 1]);
@@ -371,6 +383,7 @@ fn test_gray20_hpredict_wraparound_exact() {
 }
 
 #[test]
+#[cfg(feature = "deflate")]
 fn test_extended_depth_hpredict_random_roundtrip() {
     // Deterministic pseudo-random pixels across a spread of extended depths;
     // encode-then-decode must be the identity for every sample, including

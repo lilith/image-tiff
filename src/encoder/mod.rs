@@ -171,6 +171,10 @@ impl<W: Write + Seek, K: TiffKind> TiffEncoder<W, K> {
     /// The chosen predictor should match the data type being encoded.
     /// Encoding floating-point data with `Predictor::Horizontal` is technically possible,
     /// but rarely beneficial, and some decoders may reject such files.
+    ///
+    /// The predictor applies to LZW and Deflate compression only. Uncompressed and PackBits
+    /// images are written without it, because readers (libtiff, and this crate's decoder)
+    /// ignore the Predictor tag for codecs that do not define one.
     pub fn with_predictor(mut self, predictor: Predictor) -> Self {
         self.predictor = predictor;
 
@@ -680,6 +684,13 @@ impl<'a, W: 'a + Write + Seek, T: ColorType, K: TiffKind> ImageEncoder<'a, W, T,
         }
 
         Self::sanity_check(compression, predictor)?;
+        // Only codecs that define a predictor apply it; readers ignore the tag for the others.
+        let predictor = match compression.tag() {
+            CompressionMethod::LZW | CompressionMethod::Deflate | CompressionMethod::OldDeflate => {
+                predictor
+            }
+            _ => Predictor::None,
+        };
 
         let row_samples = u64::from(width) * u64::try_from(<T>::BITS_PER_SAMPLE.len())?;
         let row_bytes = row_samples * u64::from(<T::Inner>::BYTE_LEN);
