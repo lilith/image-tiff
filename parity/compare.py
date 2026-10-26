@@ -9,7 +9,8 @@ arrays (planes, rows, samples per row) in libtiff's stored-sample domain, undoin
 documented normalizations, then compared.
 
 Result classes:
-  exact            every sample identical
+  exact            every sample identical (LogLuv: libtiff's XYZ through the fork's
+                   f32 XYZ-to-sRGB matrix)
   differs          both decoded, samples differ (count and max difference reported)
   fork-fails       libtiff decodes, image-tiff errors
   fork-panics      image-tiff panicked
@@ -180,6 +181,11 @@ def compare_one(name, n, d):
     if compression == "6":
         return "jpeg", info, ojpeg_diff(l_arr, f_arr, int(lt["spp"]))
     notes = []
+    # LogLuv: libtiff returns XYZ (SGILOGDATAFMT_FLOAT), the fork linear sRGB through its f32
+    # matrix (src/decoder/logluv.rs xyz_to_rgb); convert libtiff's XYZ the same way.
+    if photometric == "32845" and kind == "RGB" and l_arr.shape[-1] % 3 == 0:
+        l_arr = xyz_to_rgb_bits(l_arr)
+        notes.append("libtiff XYZ to RGB")
     # WhiteIsZero: the fork returns max - v for unsigned gray.
     if photometric == "0" and kind in ("Gray", "GrayA") and fk.get("sample_format") == "Uint":
         maxv = np.uint64((1 << int(lt["bps"])) - 1)
@@ -233,6 +239,19 @@ def jpeg_diff(lt, lt_raw, f_arr, kind):
         return f"shape fork {f.shape} libtiff {l_arr.shape}"
     d = np.abs(f - l_arr)
     return f"max |d| {d.max():.0f}, {int((d > 0).sum())} of {d.size} samples differ"
+
+
+def xyz_to_rgb_bits(arr):
+    """XYZ float bit patterns to the fork's linear sRGB, rounding as its f32 code does."""
+    f32 = np.float32
+    xyz = arr.astype(np.uint32).view(np.float32).reshape(-1, 3)
+    x, y, z = xyz[:, 0], xyz[:, 1], xyz[:, 2]
+    with np.errstate(all="ignore"):
+        r = (f32(3.2404542) * x + f32(-1.5371385) * y) + f32(-0.4985314) * z
+        g = (f32(-0.969266) * x + f32(1.8760108) * y) + f32(0.0415560) * z
+        b = (f32(0.0556434) * x + f32(-0.2040259) * y) + f32(1.0572252) * z
+    rgb = np.stack([r, g, b], 1).astype(np.float32)
+    return rgb.view(np.uint32).astype(np.uint64).reshape(arr.shape)
 
 
 def ojpeg_diff(l_arr, f_arr, spp):
