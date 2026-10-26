@@ -9,15 +9,18 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        rust: ["1.88.0", stable, beta, nightly]
+        rust: ["1.99.0", stable, beta, nightly]
     steps:
     - uses: actions/checkout@v6
 
     - uses: dtolnay/rust-toolchain@nightly
-      if: ${{ matrix.rust == '1.88.0' }}
-    - name: Generate Cargo.lock with minimal-version dependencies
-      if: ${{ matrix.rust == '1.88.0' }}
-      run: cargo -Zminimal-versions generate-lockfile
+      if: ${{ matrix.rust == '1.99.0' }}
+    # Our own requirements at their floors. Transitive floors are the dependencies' business:
+    # bitvec (through lerc-rs) asks for wyz 0.5 and tap 1, and wyz 0.5.0 does not build
+    # against tap 1.0.0.
+    - name: Generate Cargo.lock with minimal versions of direct dependencies
+      if: ${{ matrix.rust == '1.99.0' }}
+      run: cargo -Zdirect-minimal-versions generate-lockfile
 
     - uses: dtolnay/rust-toolchain@v1
       with:
@@ -29,7 +32,7 @@ jobs:
     - name: build
       run: cargo build -v
     - name: test
-      if: ${{ matrix.rust != '1.88.0' }}
+      if: ${{ matrix.rust != '1.99.0' }}
       run: cargo test -v && cargo doc -v
 
   test-platforms:

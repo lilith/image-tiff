@@ -44,6 +44,11 @@ Fork fixes (2026-10-24), from an inventory of open upstream issues and PRs
 - `Decoder::new` reads the first directory with tiff 0.11.3's value limits, so
   a first image with more than 1 MiB of strip or tile offsets opens again.
 
+Rust 1.99 is now required (was 1.88). CI's minimum-version build resolves
+our direct dependencies at their floors (`-Zdirect-minimal-versions`):
+with every dependency at its floor, bitvec's wyz 0.5.0 fails to build against
+tap 1.0.0.
+
 libtiff parity (2026-10-26), measured with the harness in `parity/` against
 libtiff 4.7.2 on 2,253 directories of tiffcp-written files (codecs × strips,
 tiles and planar layouts):
