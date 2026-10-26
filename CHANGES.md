@@ -74,6 +74,18 @@ tiles and planar layouts):
   identically.
 - NeXT (32766) 2-bit gray decodes.
 - ThunderScan (32809) 4-bit decodes (`6d2cc3c2`).
+- IFD loops: the directory that closes a loop is read and the walk stops
+  after it, as libtiff does (it failed before; the `timeout` fuzz file's error
+  is now InconsistentSizesEncountered).
+- SGILog (34676) byte planes are decoded most significant first, with
+  libtiff's luminance and chroma math: all 36 SGILog files of the parity runs
+  match libtiff (off_luv24's expected hash changed).
+- The Predictor tag applies only to LZW, Deflate, LZMA, Zstandard and
+  PixarLog, as in libtiff; the encoder no longer writes a predictor for
+  uncompressed or PackBits images.
+- 24-bit samples are byte triples in the file's byte order, as in libtiff
+  (little-endian files decoded with reversed bytes); the seq-*-24b fixtures
+  and their generator are corrected.
 - SGILog tiles at the right border of an image decode; they were left 0
   because the row-based SGILog readers were read in partial rows.
 - The horizontal and floating-point predictors are undone before discarded
