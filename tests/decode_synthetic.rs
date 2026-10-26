@@ -1569,3 +1569,40 @@ fn sgilog_border_tiles() {
         );
     }
 }
+
+/// Point the first IFD's next pointer at `target` (an IFD offset, or 0).
+fn set_next_ifd(file: &mut [u8], target: u32) {
+    let ifd = u32::from_le_bytes(file[4..8].try_into().unwrap()) as usize;
+    let count = u16::from_le_bytes([file[ifd], file[ifd + 1]]) as usize;
+    let at = ifd + 2 + 12 * count;
+    file[at..at + 4].copy_from_slice(&target.to_le_bytes());
+}
+
+/// An IFD whose next pointer leads back into the chain decodes, and iteration stops there with
+/// CycleInOffsets every time it is asked, as libtiff reads such a file and reports "IFD looping".
+#[test]
+fn ifd_cycles_stop_after_the_closing_ifd() {
+    let pixels: Vec<u8> = (0..16).collect();
+    let mut file = synth::image(4, 4, 8, 1, 1)
+        .short(262, &[1])
+        .strips(vec![pixels.clone()])
+        .build();
+    let ifd0 = u32::from_le_bytes(file[4..8].try_into().unwrap());
+    set_next_ifd(&mut file, ifd0);
+
+    let mut decoder = Decoder::open(Cursor::new(file)).unwrap();
+    assert!(decoder.more_images());
+    decoder.next_image().unwrap();
+    let mut buffer = vec![0u8; 16];
+    decoder.read_image_bytes(&mut buffer).unwrap();
+    assert_eq!(buffer, pixels);
+    assert!(!decoder.more_images());
+    for _ in 0..3 {
+        assert!(matches!(
+            decoder.next_image(),
+            Err(tiff::TiffError::FormatError(
+                tiff::TiffFormatError::CycleInOffsets
+            ))
+        ));
+    }
+}

@@ -1215,6 +1215,12 @@ impl<R: Read + Seek> Decoder<R> {
         current_ifd_pointer: Option<IfdPointer>,
         next_ifd: Option<IfdPointer>,
     ) -> TiffResult<(IfdPointer, Directory)> {
+        // The current directory's `next` pointer leads back into the chain: libtiff stops here
+        // ("IFD looping"), and so do we, every time it is asked.
+        if current_ifd_pointer.is_some_and(|p| self.seen_ifds.closes_cycle(p)) {
+            return Err(TiffError::FormatError(TiffFormatError::CycleInOffsets));
+        }
+
         let Some(next_ifd) = next_ifd else {
             return Err(TiffError::FormatError(
                 TiffFormatError::ImageFileDirectoryNotFound,
@@ -1223,8 +1229,14 @@ impl<R: Read + Seek> Decoder<R> {
 
         let ifd = self.value_reader.read_directory(next_ifd)?;
 
-        // Ensure this walk does not get us into a cycle.
-        self.seen_ifds.insert_next(next_ifd, ifd.next())?;
+        // Record the edge. An edge that closes a cycle leaves this directory readable but marks
+        // its `next` pointer as not followable (see above and `more_images`).
+        match self.seen_ifds.insert_next(next_ifd, ifd.next()) {
+            Err(_) if self.seen_ifds.closes_cycle(next_ifd) => {}
+            other => {
+                other?;
+            }
+        }
 
         // Extend the list of known IFD offsets in this chain, if needed.
         if self.ifd_offsets.last().copied() == current_ifd_pointer {
@@ -1325,6 +1337,9 @@ impl<R: Read + Seek> Decoder<R> {
     /// Returns `true` if there is at least one more image available.
     pub fn more_images(&self) -> bool {
         self.directory.next().is_some()
+            && !self
+                .current_ifd_pointer
+                .is_some_and(|p| self.seen_ifds.closes_cycle(p))
     }
 
     /// Returns the byte_order of the file.

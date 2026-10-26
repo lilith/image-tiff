@@ -17,6 +17,9 @@ pub struct IfdCycles {
     component_union: HashMap<ComponentId, ComponentId>,
     links: HashMap<IfdPointer, u64>,
     chains: HashMap<IfdPointer, ComponentId>,
+    /// IFDs whose `next` pointer closes a cycle: the IFD itself is valid, its `next` is not
+    /// followable (libtiff reads such an IFD and stops there).
+    closing: std::collections::HashSet<IfdPointer>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -52,6 +55,7 @@ impl IfdCycles {
             let child = self.nominal_component(to);
 
             if parent == child {
+                self.closing.insert(from);
                 return Err(TiffError::FormatError(TiffFormatError::CycleInOffsets));
             }
 
@@ -59,6 +63,11 @@ impl IfdCycles {
         }
 
         Ok(true)
+    }
+
+    /// Whether `ifd`'s `next` pointer was found to close a cycle.
+    pub fn closes_cycle(&self, ifd: IfdPointer) -> bool {
+        self.closing.contains(&ifd)
     }
 
     fn ensure_node(&mut self, ifd: IfdPointer) {

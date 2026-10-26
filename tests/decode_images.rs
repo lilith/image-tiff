@@ -836,8 +836,11 @@ fn timeout() {
     let mut decoder = Decoder::open(std::io::Cursor::new(&image)).unwrap();
     let error = decoder.next_image().unwrap_err();
 
+    // Like libtiff, the decoder reads the IFD that closes the cycle and stops after it; that
+    // IFD's sizes are inconsistent. (Before the decoder followed libtiff here, the error was
+    // CycleInOffsets.)
     match error {
-        TiffError::FormatError(TiffFormatError::CycleInOffsets) => {}
+        TiffError::FormatError(TiffFormatError::InconsistentSizesEncountered) => {}
         e => panic!("Unexpected error {e:?}"),
     }
 }
