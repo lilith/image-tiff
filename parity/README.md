@@ -24,6 +24,12 @@ just parity ~/tmp/parity/run tests/images tests/libtiffpic <more files or dirs>
 `gen_jbig.sh` writes jbigkit-encoded JBIG files beyond libtiff's own encoder (`jbig_tiff.c`:
 templates, typical and deterministic prediction, SDRST, AT, NEWLEN, differential layers).
 
+12-bit JPEG needs a libtiff on libjpeg-turbo 3 (its 8/12-bit dual mode): `build-libtiff-jpeg12.sh`
+builds libjpeg-turbo 3.2.0 (SHA-256 pinned, as zenjpeg's oracle) and libtiff 4.7.2 on it, and
+`gen_jpeg12.sh` writes 12-bit JPEG TIFFs with it. image-tiff's zune-jpeg has no 12-bit decoding;
+zentiff decodes these pages with zenjpeg (its `tests/jpeg_12bit.rs` records the comparison).
+libtiff's 12-bit JPEG reader never writes the last sample of a row with an odd sample count.
+
 Results land in `<out>/results.tsv`; `header.txt` records the libtiff version, the image-tiff
 commit and the host.
 
